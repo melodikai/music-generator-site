@@ -7,6 +7,7 @@ import PromptPanel from '@/components/studio/PromptPanel';
 import Player from '@/components/studio/Player';
 import TrackFeed from '@/components/studio/TrackFeed';
 import AccountDialog from '@/components/studio/AccountDialog';
+import { checkGeneration, startGeneration } from '@/lib/api';
 
 const STAGE_IMAGE =
   'https://cdn.poehali.dev/projects/1b7a339a-91f0-4ef8-9965-ce631414fd64/files/8a003fe7-72fb-4cd1-b63b-928feb3c181e.jpg';
@@ -15,6 +16,7 @@ const Index = () => {
   const [tracks, setTracks] = useState<Track[]>(INITIAL_TRACKS);
   const [section, setSection] = useState<SectionId>('create');
   const [prompt, setPrompt] = useState('');
+  const [image, setImage] = useState<string | null>(null);
   const [style, setStyle] = useState('Лоу-фай');
   const [mood, setMood] = useState('Тёплое');
   const [withVocal, setWithVocal] = useState(false);
@@ -41,34 +43,72 @@ const Index = () => {
     [],
   );
 
-  const handleGenerate = () => {
+  const handleGenerate = async () => {
     if (generating) return;
-    if (prompt.trim().length < 8) {
+    const text = prompt.trim();
+    if (!image && text.length < 8) {
       setError('Опишите музыку чуть подробнее — хотя бы 8 символов');
       return;
     }
+
     setError(null);
     setGenerating(true);
-    setProgress(0);
-    const text = prompt.trim();
+    setProgress(4);
 
     timer.current = window.setInterval(() => {
-      setProgress((p) => {
-        if (p >= 100) {
-          if (timer.current) window.clearInterval(timer.current);
-          const fresh = makeTrack(text, style, tracks.length);
-          setTracks((prev) => [fresh, ...prev]);
-          setActiveId(fresh.id);
-          setPlaying(true);
-          setGenerating(false);
-          setPrompt('');
-          setUsed((u) => u + 1);
-          setSection('create');
-          return 100;
-        }
-        return p + Math.max(2, Math.round(Math.random() * 7));
+      setProgress((p) => (p >= 92 ? p : p + 1));
+    }, 700);
+
+    const stop = () => {
+      if (timer.current) window.clearInterval(timer.current);
+      timer.current = null;
+    };
+
+    try {
+      const started = await startGeneration({
+        prompt: text,
+        style,
+        mood,
+        vocal: withVocal,
+        image,
       });
-    }, 140);
+
+      let audio: string | null = null;
+      for (let i = 0; i < 90; i += 1) {
+        await new Promise((r) => window.setTimeout(r, 3000));
+        const state = await checkGeneration(started.id);
+        if (state.status === 'succeeded') {
+          audio = state.audio;
+          break;
+        }
+        if (state.status === 'failed' || state.status === 'canceled') {
+          throw new Error('Движок не справился с этим запросом — попробуйте описать иначе');
+        }
+      }
+
+      stop();
+      if (!audio) throw new Error('Генерация заняла слишком много времени, попробуйте ещё раз');
+
+      setProgress(100);
+      const fresh = makeTrack(started.prompt || text, style, tracks.length, {
+        audio,
+        seconds: 47,
+        fromPhoto: Boolean(image),
+      });
+      setTracks((prev) => [fresh, ...prev]);
+      setActiveId(fresh.id);
+      setPlaying(true);
+      setPrompt('');
+      setImage(null);
+      setUsed((u) => u + 1);
+      setSection('create');
+    } catch (e) {
+      stop();
+      setError(e instanceof Error ? e.message : 'Не удалось создать трек');
+    } finally {
+      stop();
+      setGenerating(false);
+    }
   };
 
   const handlePlay = (track: Track) => {
@@ -151,6 +191,8 @@ const Index = () => {
               <PromptPanel
                 value={prompt}
                 onChange={setPrompt}
+                image={image}
+                onImage={setImage}
                 style={style}
                 onStyle={setStyle}
                 mood={mood}

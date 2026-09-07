@@ -8,6 +8,8 @@ export type Track = {
   favorite: boolean;
   cover: string;
   prompt: string;
+  audio?: string | null;
+  fromPhoto?: boolean;
 };
 
 export const COVERS = [
@@ -135,8 +137,13 @@ const TITLE_PARTS_B = [
 
 const pick = <T,>(list: T[]) => list[Math.floor(Math.random() * list.length)];
 
-export const makeTrack = (prompt: string, style: string, index: number): Track => {
-  const seconds = 30 + Math.floor(Math.random() * 180);
+export const makeTrack = (
+  prompt: string,
+  style: string,
+  index: number,
+  extra?: { audio?: string | null; seconds?: number; fromPhoto?: boolean },
+): Track => {
+  const seconds = extra?.seconds ?? 30 + Math.floor(Math.random() * 180);
   return {
     id: `gen-${Date.now()}-${index}`,
     title: `${pick(TITLE_PARTS_A)} ${pick(TITLE_PARTS_B)}`,
@@ -147,6 +154,8 @@ export const makeTrack = (prompt: string, style: string, index: number): Track =
     favorite: false,
     cover: COVERS[Math.floor(Math.random() * COVERS.length)],
     prompt,
+    audio: extra?.audio ?? null,
+    fromPhoto: extra?.fromPhoto,
   };
 };
 

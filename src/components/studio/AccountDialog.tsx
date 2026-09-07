@@ -125,6 +125,17 @@ const AccountDialog = ({
                 Лимит обновится 1 октября. Неизрасходованные генерации не переносятся.
               </p>
             </div>
+            <div className="rounded-2xl border border-border bg-secondary p-4">
+              <p className="flex items-center gap-2 text-[0.9em] text-foreground">
+                <Icon name="ShieldCheck" size={15} />
+                Права на треки
+              </p>
+              <p className="mt-2 text-[0.85em] text-muted-foreground">
+                Музыка создаётся с нуля на моделях со свободной лицензией и не содержит чужих
+                записей. Исключительные права на каждый созданный трек принадлежат вам — включая
+                коммерческое использование, рекламу, YouTube и стриминг.
+              </p>
+            </div>
           </TabsContent>
 
           <TabsContent value="plan" className="space-y-2 pt-4">

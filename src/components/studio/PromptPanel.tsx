@@ -2,10 +2,13 @@ import { FormEvent, useEffect, useState } from 'react';
 import Icon from '@/components/ui/icon';
 import { cn } from '@/lib/utils';
 import { MOODS, PROMPT_IDEAS, STYLES, TYPING_PLACEHOLDER } from '@/lib/studio-data';
+import PhotoDrop from '@/components/studio/PhotoDrop';
 
 type Props = {
   value: string;
   onChange: (value: string) => void;
+  image: string | null;
+  onImage: (value: string | null) => void;
   style: string;
   onStyle: (style: string) => void;
   mood: string;
@@ -41,6 +44,8 @@ const useTypedPlaceholder = (active: boolean) => {
 const PromptPanel = ({
   value,
   onChange,
+  image,
+  onImage,
   style,
   onStyle,
   mood,
@@ -54,7 +59,15 @@ const PromptPanel = ({
 }: Props) => {
   const [focused, setFocused] = useState(false);
   const [open, setOpen] = useState(false);
+  const [photoOpen, setPhotoOpen] = useState(false);
   const typed = useTypedPlaceholder(!value && !focused);
+
+  const togglePhoto = () => {
+    setPhotoOpen((v) => {
+      if (v) onImage(null);
+      return !v;
+    });
+  };
 
   const submit = (e: FormEvent) => {
     e.preventDefault();
@@ -72,7 +85,7 @@ const PromptPanel = ({
         className="animate-rise mx-auto mt-3.5 max-w-[430px] text-[0.98em] leading-[1.5] text-foreground/60"
         style={{ animationDelay: '0.05s' }}
       >
-        Трек с вокалом и сведением — за минуту. Права на использование ваши.
+        Трек по описанию или по фото — за минуту. Все права на результат остаются у вас.
       </p>
 
       <form
@@ -105,6 +118,19 @@ const PromptPanel = ({
             )}
           </div>
           <button
+            type="button"
+            onClick={togglePhoto}
+            aria-label="Создать музыку по фото"
+            className={cn(
+              'grid h-[38px] w-[38px] flex-none place-items-center rounded-full transition-colors',
+              photoOpen || image
+                ? 'bg-white/25 text-foreground'
+                : 'bg-white/10 text-foreground/70 hover:text-foreground',
+            )}
+          >
+            <Icon name="Image" size={16} />
+          </button>
+          <button
             type="submit"
             disabled={generating}
             aria-label="Сгенерировать трек"
@@ -124,6 +150,17 @@ const PromptPanel = ({
             Настройки
             <Icon name={open ? 'ChevronUp' : 'ChevronDown'} size={13} />
           </button>
+          <button
+            type="button"
+            onClick={togglePhoto}
+            className={cn(
+              'glass-panel flex items-center gap-1.5 rounded-full px-3 py-1.5 text-[0.82em] transition-colors',
+              photoOpen || image ? 'text-foreground' : 'text-foreground/75 hover:text-foreground',
+            )}
+          >
+            <Icon name="ImagePlus" size={13} />
+            Музыка по фото
+          </button>
           <span className="glass-panel rounded-full px-3 py-1.5 text-[0.82em] text-foreground/75">
             {style}
           </span>
@@ -136,6 +173,17 @@ const PromptPanel = ({
             </span>
           )}
         </div>
+
+        {photoOpen && (
+          <PhotoDrop
+            image={image}
+            onImage={onImage}
+            onClose={() => {
+              setPhotoOpen(false);
+              onImage(null);
+            }}
+          />
+        )}
 
         {open && (
           <div className="glass-panel animate-scale-in mx-auto mt-3 space-y-4 rounded-2xl p-4 text-left">
@@ -237,7 +285,9 @@ const PromptPanel = ({
         ) : (
           !error && (
             <p className="mt-3 text-[0.85em] text-foreground/45">
-              Опишите настроение, инструменты и темп
+              {image
+                ? 'Фото готово — нажмите стрелку, чтобы собрать трек'
+                : 'Опишите настроение, инструменты и темп'}
             </p>
           )
         )}

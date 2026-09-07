@@ -35,9 +35,12 @@ const TrackCard = ({ track, active, playing, onPlay, onFavorite, delay = 0, deta
       <span className="block truncate text-[0.9em] font-medium tracking-[-0.01em]">
         {track.title}
       </span>
-      <span className="mt-0.5 block truncate text-[0.78em] text-card-muted">
-        {track.style} · {track.duration}
-        {detailed ? ` · ${track.createdAt}` : ''}
+      <span className="mt-0.5 flex items-center gap-1 truncate text-[0.78em] text-card-muted">
+        {track.fromPhoto && <Icon name="Image" size={11} className="flex-none" />}
+        <span className="truncate">
+          {track.style} · {track.duration}
+          {detailed ? ` · ${track.createdAt}` : ''}
+        </span>
       </span>
     </div>
     <button

@@ -1,0 +1,208 @@
+import base64
+import json
+import os
+import time
+import uuid
+from typing import Any, Dict, Optional
+
+import boto3
+import requests
+
+REPLICATE_API = 'https://api.replicate.com/v1'
+MUSIC_MODEL = os.environ.get('MUSIC_MODEL', 'stackadoc/stable-audio-open-1.0')
+CAPTION_MODEL = os.environ.get('CAPTION_MODEL', 'salesforce/blip')
+
+CORS = {
+    'Access-Control-Allow-Origin': '*',
+    'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+    'Access-Control-Allow-Headers': 'Content-Type, X-User-Id, X-Auth-Token, X-Session-Id',
+    'Access-Control-Max-Age': '86400',
+    'Content-Type': 'application/json',
+}
+
+
+def respond(status: int, payload: Dict[str, Any]) -> Dict[str, Any]:
+    return {
+        'statusCode': status,
+        'headers': CORS,
+        'isBase64Encoded': False,
+        'body': json.dumps(payload, ensure_ascii=False),
+    }
+
+
+def token() -> Optional[str]:
+    return os.environ.get('REPLICATE_API_TOKEN')
+
+
+def headers() -> Dict[str, str]:
+    return {'Authorization': f'Token {token()}', 'Content-Type': 'application/json'}
+
+
+def s3_client():
+    return boto3.client(
+        's3',
+        endpoint_url='https://bucket.poehali.dev',
+        aws_access_key_id=os.environ['AWS_ACCESS_KEY_ID'],
+        aws_secret_access_key=os.environ['AWS_SECRET_ACCESS_KEY'],
+    )
+
+
+def cdn_url(key: str) -> str:
+    return f"https://cdn.poehali.dev/projects/{os.environ['AWS_ACCESS_KEY_ID']}/bucket/{key}"
+
+
+def latest_version(model: str) -> str:
+    r = requests.get(f'{REPLICATE_API}/models/{model}', headers=headers(), timeout=15)
+    r.raise_for_status()
+    return r.json()['latest_version']['id']
+
+
+def start_prediction(model: str, payload: Dict[str, Any]) -> Dict[str, Any]:
+    body = {'version': latest_version(model), 'input': payload}
+    r = requests.post(f'{REPLICATE_API}/predictions', headers=headers(), json=body, timeout=20)
+    if r.status_code >= 400:
+        raise RuntimeError(r.text)
+    return r.json()
+
+
+def upload_image(data_url: str) -> str:
+    raw = data_url.split(',', 1)[-1]
+    binary = base64.b64decode(raw)
+    ext = 'png'
+    if 'image/jpeg' in data_url or 'image/jpg' in data_url:
+        ext = 'jpg'
+    elif 'image/webp' in data_url:
+        ext = 'webp'
+    key = f'uploads/{uuid.uuid4().hex}.{ext}'
+    s3_client().put_object(Bucket='files', Key=key, Body=binary, ContentType=f'image/{ext}')
+    return cdn_url(key)
+
+
+def describe_image(image_url: str) -> str:
+    started = start_prediction(CAPTION_MODEL, {'image': image_url, 'task': 'image_captioning'})
+    prediction_url = started['urls']['get']
+    for _ in range(24):
+        time.sleep(1)
+        r = requests.get(prediction_url, headers=headers(), timeout=15)
+        data = r.json()
+        if data['status'] == 'succeeded':
+            out = data.get('output')
+            if isinstance(out, list):
+                out = ' '.join(str(x) for x in out)
+            text = str(out or '').replace('Caption:', '').strip()
+            return text
+        if data['status'] in ('failed', 'canceled'):
+            return ''
+    return ''
+
+
+def build_prompt(text: str, style: str, mood: str, vocal: bool) -> str:
+    parts = [text.strip()]
+    if style:
+        parts.append(style)
+    if mood:
+        parts.append(mood)
+    parts.append('vocals' if vocal else 'instrumental')
+    parts.append('high quality, clean mix')
+    return ', '.join(p for p in parts if p)
+
+
+def handle_start(body: Dict[str, Any]) -> Dict[str, Any]:
+    """Запускает генерацию музыки по тексту или по загруженному фото."""
+    text = (body.get('prompt') or '').strip()
+    image = body.get('image') or ''
+    source_note = ''
+
+    if image:
+        image_url = upload_image(image)
+        caption = describe_image(image_url)
+        if caption:
+            source_note = caption
+            text = f'{caption}. {text}'.strip() if text else caption
+        elif not text:
+            return respond(400, {'error': 'Не удалось прочитать изображение, добавьте описание словами'})
+
+    if len(text) < 4:
+        return respond(400, {'error': 'Опишите музыку подробнее'})
+
+    duration = int(body.get('duration') or 47)
+    duration = max(10, min(47, duration))
+
+    prediction = start_prediction(
+        MUSIC_MODEL,
+        {
+            'prompt': build_prompt(
+                text,
+                str(body.get('style') or ''),
+                str(body.get('mood') or ''),
+                bool(body.get('vocal')),
+            ),
+            'seconds_total': duration,
+            'steps': int(body.get('steps') or 100),
+        },
+    )
+
+    return respond(200, {
+        'id': prediction['id'],
+        'status': prediction['status'],
+        'caption': source_note,
+        'prompt': text,
+    })
+
+
+def handle_status(prediction_id: str) -> Dict[str, Any]:
+    """Отдаёт состояние генерации и ссылку на готовый трек."""
+    r = requests.get(f'{REPLICATE_API}/predictions/{prediction_id}', headers=headers(), timeout=15)
+    if r.status_code >= 400:
+        return respond(404, {'error': 'Генерация не найдена'})
+    data = r.json()
+    status = data.get('status')
+    audio = None
+
+    if status == 'succeeded':
+        out = data.get('output')
+        if isinstance(out, list):
+            out = out[0] if out else None
+        if isinstance(out, dict):
+            out = out.get('audio') or out.get('url')
+        if out:
+            file = requests.get(str(out), timeout=60)
+            key = f'tracks/{prediction_id}.wav'
+            s3_client().put_object(
+                Bucket='files', Key=key, Body=file.content, ContentType='audio/wav'
+            )
+            audio = cdn_url(key)
+
+    return respond(200, {
+        'id': prediction_id,
+        'status': status,
+        'audio': audio,
+        'error': data.get('error'),
+    })
+
+
+def handler(event: Dict[str, Any], context) -> Dict[str, Any]:
+    """Генерация музыки по текстовому запросу или по фотографии через открытые модели."""
+    method = event.get('httpMethod', 'GET')
+
+    if method == 'OPTIONS':
+        return {'statusCode': 200, 'headers': CORS, 'isBase64Encoded': False, 'body': ''}
+
+    params = event.get('queryStringParameters') or {}
+
+    if method == 'GET':
+        prediction_id = params.get('id')
+        if not prediction_id:
+            return respond(400, {'error': 'Не указан идентификатор генерации'})
+        if not token():
+            return respond(503, {'error': 'Генерация временно недоступна: не настроен доступ к движку'})
+        return handle_status(prediction_id)
+
+    if not token():
+        return respond(503, {'error': 'Генерация временно недоступна: не настроен доступ к движку'})
+
+    if method == 'POST':
+        body = json.loads(event.get('body') or '{}')
+        return handle_start(body)
+
+    return respond(405, {'error': 'Метод не поддерживается'})
