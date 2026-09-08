@@ -187,10 +187,7 @@ const PromptPanel = ({
               setLyricsOpen((v) => !v);
               if (!withVocal) onVocal(true);
             }}
-            className={cn(
-              'glass-panel flex items-center gap-1.5 rounded-full px-3 py-1.5 text-[0.82em] transition-colors',
-              lyricsOpen || lyrics ? 'text-foreground' : 'text-foreground/75 hover:text-foreground',
-            )}
+            className="glass-panel flex items-center gap-1.5 rounded-full px-3 py-1.5 text-[0.82em] text-foreground/75 transition-colors hover:text-foreground"
           >
             <Icon name="PenLine" size={13} />
             Свой текст
@@ -245,7 +242,7 @@ const PromptPanel = ({
               onChange={(e) => onLyrics(e.target.value)}
               rows={7}
               placeholder={'[Куплет]\nГород спит, а я иду один...\n\n[Припев]\nСветят фонари над головой'}
-              className="w-full resize-y rounded-xl bg-white/8 px-3.5 py-3 text-[0.9em] leading-relaxed text-foreground/90 outline-none placeholder:text-foreground/35 focus:bg-white/12"
+              className="w-full resize-y rounded-xl border border-white/10 bg-black/70 px-3.5 py-3 text-[0.9em] leading-relaxed text-foreground/90 outline-none placeholder:text-foreground/35 focus:border-white/20 focus:bg-black/80"
             />
             <div>
               <p className="mb-2 text-[0.72em] uppercase tracking-[0.14em] text-foreground/50">
@@ -255,7 +252,7 @@ const PromptPanel = ({
                 value={styleText}
                 onChange={(e) => onStyleText(e.target.value)}
                 placeholder="меланхоличный инди-рок, живые барабаны, 90 BPM"
-                className="w-full rounded-xl bg-white/8 px-3.5 py-2.5 text-[0.9em] text-foreground/90 outline-none placeholder:text-foreground/35 focus:bg-white/12"
+                className="w-full rounded-xl border border-white/10 bg-black/70 px-3.5 py-2.5 text-[0.9em] text-foreground/90 outline-none placeholder:text-foreground/35 focus:border-white/20 focus:bg-black/80"
               />
             </div>
             <p className="text-[0.78em] leading-relaxed text-foreground/45">
