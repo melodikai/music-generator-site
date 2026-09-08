@@ -2,7 +2,8 @@ import { DragEvent, useRef, useState } from 'react';
 import Icon from '@/components/ui/icon';
 import { cn } from '@/lib/utils';
 import { Track } from '@/lib/studio-data';
-import { Stem, checkStems, startStems } from '@/lib/api';
+import { Stem } from '@/lib/api';
+import { splitStems } from '@/lib/stem-split';
 
 type Props = {
   tracks: Track[];
@@ -85,7 +86,7 @@ const StemSplitter = ({ tracks }: Props) => {
   const input = useRef<HTMLInputElement>(null);
   const [over, setOver] = useState(false);
   const [fileName, setFileName] = useState<string | null>(null);
-  const [dataUrl, setDataUrl] = useState<string | null>(null);
+  const [file, setFile] = useState<File | null>(null);
   const [sourceUrl, setSourceUrl] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [progress, setProgress] = useState(0);
@@ -94,22 +95,20 @@ const StemSplitter = ({ tracks }: Props) => {
 
   const ready = tracks.filter((t) => t.audio);
 
-  const read = (file: File) => {
-    if (!file.type.startsWith('audio/')) {
+  const read = (picked: File) => {
+    if (!picked.type.startsWith('audio/')) {
       setError('Нужен аудиофайл: MP3, WAV, M4A или OGG');
       return;
     }
-    if (file.size > MAX_MB * 1024 * 1024) {
+    if (picked.size > MAX_MB * 1024 * 1024) {
       setError(`Файл больше ${MAX_MB} МБ — выберите поменьше`);
       return;
     }
     setError(null);
     setStems([]);
     setSourceUrl(null);
-    setFileName(file.name);
-    const reader = new FileReader();
-    reader.onload = () => setDataUrl(String(reader.result));
-    reader.readAsDataURL(file);
+    setFileName(picked.name);
+    setFile(picked);
   };
 
   const drop = (e: DragEvent<HTMLDivElement>) => {
@@ -120,39 +119,23 @@ const StemSplitter = ({ tracks }: Props) => {
   };
 
   const split = async () => {
-    if (busy || (!dataUrl && !sourceUrl)) return;
+    if (busy || (!file && !sourceUrl)) return;
     setBusy(true);
     setError(null);
     setStems([]);
     setProgress(5);
 
-    const timer = window.setInterval(() => setProgress((p) => (p >= 92 ? p : p + 1)), 900);
-
     try {
-      const started = await startStems(
-        sourceUrl ? { audioUrl: sourceUrl } : { audio: dataUrl },
-      );
-
-      let result: Stem[] = [];
-      for (let i = 0; i < 90; i += 1) {
-        await new Promise((r) => window.setTimeout(r, 3000));
-        const state = await checkStems(started.id);
-        if (state.status === 'succeeded') {
-          result = state.stems;
-          break;
-        }
-        if (state.status === 'failed' || state.status === 'canceled') {
-          throw new Error('Не удалось разделить этот файл — попробуйте другой');
-        }
-      }
-
-      if (!result.length) throw new Error('Разделение заняло слишком много времени');
+      const result = await splitStems(file || sourceUrl!, setProgress);
       setProgress(100);
-      setStems(result);
+      setStems(result.map(({ id, name, url }) => ({ id, name, url })));
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Не удалось разделить трек');
+      setError(
+        e instanceof Error && e.message.includes('decode')
+          ? 'Не удалось прочитать этот файл — попробуйте MP3 или WAV'
+          : 'Не удалось разделить трек — попробуйте другой файл',
+      );
     } finally {
-      window.clearInterval(timer);
       setBusy(false);
     }
   };
@@ -164,8 +147,8 @@ const StemSplitter = ({ tracks }: Props) => {
           Разделение на дорожки
         </h1>
         <p className="animate-rise mx-auto mt-3 max-w-[460px] text-[0.98em] leading-[1.5] text-foreground/60">
-          Загрузите трек — нейросеть вытащит вокал, ударные, бас и остальные инструменты
-          отдельными файлами.
+          Загрузите трек — вокал, минусовка, бас и ударные разложатся по отдельным файлам.
+          Работает прямо в браузере: бесплатно и без ограничений.
         </p>
       </div>
 
@@ -214,7 +197,7 @@ const StemSplitter = ({ tracks }: Props) => {
                   type="button"
                   onClick={() => {
                     setSourceUrl(t.audio || null);
-                    setDataUrl(null);
+                    setFile(null);
                     setFileName(t.title);
                     setStems([]);
                     setError(null);
@@ -236,7 +219,7 @@ const StemSplitter = ({ tracks }: Props) => {
         <button
           type="button"
           onClick={split}
-          disabled={busy || (!dataUrl && !sourceUrl)}
+          disabled={busy || (!file && !sourceUrl)}
           className="mt-4 flex w-full items-center justify-center gap-2 rounded-xl bg-primary px-4 py-3 text-[0.95em] text-primary-foreground transition-transform hover:scale-[1.01] disabled:opacity-45 disabled:hover:scale-100"
         >
           <Icon name={busy ? 'Loader' : 'Split'} size={16} className={cn(busy && 'animate-spin')} />

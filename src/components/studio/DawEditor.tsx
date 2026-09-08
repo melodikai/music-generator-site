@@ -2,7 +2,8 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import Icon from '@/components/ui/icon';
 import { cn } from '@/lib/utils';
 import { Track } from '@/lib/studio-data';
-import { Stem, checkStems, startStems } from '@/lib/api';
+import { Stem } from '@/lib/api';
+import { splitStems } from '@/lib/stem-split';
 
 type Props = {
   tracks: Track[];
@@ -83,31 +84,22 @@ const DawEditor = ({ tracks }: Props) => {
     setBusy(true);
     setProgress(5);
 
-    const timer = window.setInterval(() => setProgress((p) => (p >= 92 ? p : p + 1)), 900);
-
     try {
-      const started = await startStems({ audioUrl: track.audio });
-      let result: Stem[] = [];
-
-      for (let i = 0; i < 90; i += 1) {
-        await new Promise((r) => window.setTimeout(r, 3000));
-        const state = await checkStems(started.id);
-        if (state.status === 'succeeded') {
-          result = state.stems;
-          break;
-        }
-        if (state.status === 'failed' || state.status === 'canceled') {
-          throw new Error('Не удалось разобрать этот трек на дорожки');
-        }
-      }
-
-      if (!result.length) throw new Error('Разбор занял слишком много времени');
+      const result = await splitStems(track.audio, setProgress);
       setProgress(100);
-      setLanes(result.map((s) => ({ ...s, volume: 85, muted: false, solo: false })));
-    } catch (e) {
-      setError(e instanceof Error ? e.message : 'Не удалось открыть трек в студии');
+      setLanes(
+        result.map(({ id, name, url }) => ({
+          id,
+          name,
+          url,
+          volume: 85,
+          muted: false,
+          solo: false,
+        })),
+      );
+    } catch {
+      setError('Не удалось разобрать этот трек на дорожки');
     } finally {
-      window.clearInterval(timer);
       setBusy(false);
     }
   };
