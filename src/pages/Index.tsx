@@ -228,7 +228,7 @@ const Index = () => {
                 <img
                   src="/logo-fasie.png"
                   alt="Фонд содействия инновациям"
-                  className="h-7 w-auto opacity-90"
+                  className="h-9 w-auto"
                 />
                 <span className="h-6 w-px bg-white/12" aria-hidden />
                 <img
