@@ -79,6 +79,10 @@ const DawEditor = ({ tracks }: Props) => {
     setPlaying(false);
     setPosition(0);
     setDuration(0);
+    lanes.forEach((l) => {
+      if (l.url.startsWith('blob:')) URL.revokeObjectURL(l.url);
+    });
+    audios.current = {};
     setLanes([]);
     setError(null);
     setBusy(true);
