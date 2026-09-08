@@ -19,12 +19,7 @@ HF_API = os.environ.get('HF_API', 'https://router.huggingface.co/hf-inference/mo
 HF_MUSIC_MODEL = os.environ.get('HF_MUSIC_MODEL', 'facebook/musicgen-small')
 HF_CAPTION_MODELS = [
     m.strip()
-    for m in (
-        os.environ.get('HF_CAPTION_MODEL')
-        or 'Salesforce/blip-image-captioning-large,'
-           'Salesforce/blip-image-captioning-base,'
-           'nlpconnect/vit-gpt2-image-captioning'
-    ).split(',')
+    for m in (os.environ.get('HF_CAPTION_MODEL') or '').split(',')
     if m.strip()
 ]
 
@@ -104,6 +99,7 @@ def vocal_start(
     title: str,
     voice: str = 'any',
     lyrics: str = '',
+    seconds: int = 165,
 ) -> Dict[str, Any]:
     """Ставит задачу на песню с вокалом в очередь российского шлюза."""
     key = vocal_token()
@@ -117,6 +113,7 @@ def vocal_start(
         'model': VOCAL_MODEL,
         'instrumental': False,
         'title': (title or 'Трек')[:60],
+        'duration': int(seconds),
     }
 
     if lyrics:
@@ -250,39 +247,60 @@ def hf_caption(image_url: str) -> str:
     except requests.RequestException:
         return ''
 
+    mime = 'image/jpeg'
+    if image_url.lower().endswith('.png'):
+        mime = 'image/png'
+    elif image_url.lower().endswith('.webp'):
+        mime = 'image/webp'
+
+    encoded = base64.b64encode(img).decode()
+    auth = {'Authorization': f'Bearer {tok}'}
+
     for model in HF_CAPTION_MODELS:
-        try:
-            r = requests.post(
-                f'{HF_API}/{model}',
-                headers={'Authorization': f'Bearer {tok}'},
-                data=img,
-                timeout=90,
-            )
-            if r.status_code >= 400:
-                print(f'[caption] {model} -> {r.status_code}')
+        attempts = (
+            {'headers': {**auth, 'Content-Type': mime}, 'data': img},
+            {'headers': auth, 'json': {'inputs': encoded}},
+        )
+
+        for attempt in attempts:
+            try:
+                r = requests.post(f'{HF_API}/{model}', timeout=90, **attempt)
+                if r.status_code >= 400:
+                    print(f'[caption] {model} -> {r.status_code}: {r.text[:160]}')
+                    continue
+
+                out = r.json()
+                if isinstance(out, dict):
+                    out = [out]
+                if isinstance(out, list) and out and isinstance(out[0], dict):
+                    text = str(out[0].get('generated_text', '')).strip()
+                    if text:
+                        return text
+            except (requests.RequestException, ValueError) as e:
+                print(f'[caption] {model} failed: {type(e).__name__}')
                 continue
-            out = r.json()
-            if isinstance(out, list) and out:
-                text = str(out[0].get('generated_text', '')).strip()
-                if text:
-                    return text
-        except (requests.RequestException, ValueError) as e:
-            print(f'[caption] {model} failed: {type(e).__name__}')
-            continue
 
     return ''
 
 
 MOOD_BY_LIGHT = [
-    (60, 'dark moody atmosphere, deep low tones, slow tempo'),
-    (110, 'dim evening atmosphere, warm mellow tones, unhurried tempo'),
-    (170, 'soft daylight atmosphere, gentle warm harmony, medium tempo'),
-    (255, 'bright airy atmosphere, light shimmering harmony, uplifting tempo'),
+    (55, 'night mood, dark deep low tones, very slow tempo, sparse arrangement'),
+    (100, 'evening mood, warm mellow tones, unhurried tempo, intimate feel'),
+    (150, 'soft daylight mood, gentle warm harmony, medium tempo'),
+    (200, 'bright daylight mood, light shimmering harmony, flowing tempo'),
+    (256, 'radiant sunlit mood, airy uplifting harmony, joyful tempo'),
+]
+
+SCENE_HINTS = [
+    ('nature', 'organic acoustic instruments, natural open air feeling'),
+    ('sky', 'wide spacious pads, floating airy texture'),
+    ('sunset', 'warm nostalgic chords, golden hour feeling, tender melody'),
+    ('urban', 'steady rhythmic pulse, modern city groove'),
 ]
 
 
 def image_mood_prompt(image_data_url: str) -> str:
-    """Собирает музыкальное описание по цветам фото — работает без внешних сервисов."""
+    """Собирает музыкальное описание по цветам и свету фото. Работает без внешних сервисов."""
     try:
         from io import BytesIO
 
@@ -290,7 +308,7 @@ def image_mood_prompt(image_data_url: str) -> str:
 
         raw = base64.b64decode(image_data_url.split(',', 1)[-1])
         img = Image.open(BytesIO(raw)).convert('RGB')
-        img.thumbnail((64, 64))
+        img.thumbnail((72, 72))
         pixels = list(img.getdata())
     except Exception as e:
         print(f'[mood] image read failed: {type(e).__name__}')
@@ -304,25 +322,46 @@ def image_mood_prompt(image_data_url: str) -> str:
     g_avg = sum(p[1] for p in pixels) / count
     b_avg = sum(p[2] for p in pixels) / count
     light = (r_avg + g_avg + b_avg) / 3
-
     spread = sum(max(p) - min(p) for p in pixels) / count
 
     parts = []
+
     for edge, phrase in MOOD_BY_LIGHT:
-        if light <= edge:
+        if light < edge:
             parts.append(phrase)
             break
 
-    if r_avg > b_avg + 18:
+    if r_avg > b_avg + 30:
         parts.append('warm golden colours, analog warmth, tape saturation')
-    elif b_avg > r_avg + 18:
+    elif r_avg > b_avg + 12:
+        parts.append('warm amber tones, soft vintage character')
+    elif b_avg > r_avg + 30:
         parts.append('cool blue colours, airy reverb, spacious pads')
+    elif b_avg > r_avg + 12:
+        parts.append('cool calm tones, clean transparent mix')
     else:
         parts.append('neutral natural colours, balanced acoustic timbre')
 
-    if spread < 26:
+    # Верхняя треть снимка часто небо, нижняя — земля.
+    top = pixels[: max(1, count // 3)]
+    bottom = pixels[-max(1, count // 3):]
+    top_light = sum(sum(p) for p in top) / (3 * len(top))
+    bottom_light = sum(sum(p) for p in bottom) / (3 * len(bottom))
+
+    green_share = sum(1 for p in pixels if p[1] > p[0] + 12 and p[1] > p[2] + 12) / count
+    blue_top = sum(1 for p in top if p[2] > p[0] + 20) / len(top)
+    warm_share = sum(1 for p in pixels if p[0] > 150 and p[1] > 90 and p[2] < 110) / count
+
+    if green_share > 0.18:
+        parts.append(SCENE_HINTS[0][1])
+    if blue_top > 0.35 and top_light > bottom_light:
+        parts.append(SCENE_HINTS[1][1])
+    if warm_share > 0.2 and light < 165:
+        parts.append(SCENE_HINTS[2][1])
+
+    if spread < 24:
         parts.append('calm minimal arrangement, few instruments, ambient texture')
-    elif spread > 78:
+    elif spread > 82:
         parts.append('rich vivid arrangement, expressive layered instruments')
 
     return ', '.join(parts)
@@ -396,7 +435,7 @@ def handle_start(body: Dict[str, Any]) -> Dict[str, Any]:
             source_note = caption
             text = f'{caption}. {text}'.strip() if text else caption
         elif photo_mood:
-            source_note = 'Настроение считано по цветам и свету снимка'
+            source_note = 'Настроение снимка считано по свету и цветам'
             if not text:
                 text = 'music inspired by this photograph'
         elif not text:
