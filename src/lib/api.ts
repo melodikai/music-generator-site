@@ -245,6 +245,21 @@ export const login = async (email: string, password: string) => {
   return data.user as AuthUser;
 };
 
+export const forgotPassword = async (email: string): Promise<string> => {
+  const data = await authRequest({
+    action: 'forgot',
+    email,
+    origin: window.location.origin,
+  });
+  return data.message || 'Письмо отправлено';
+};
+
+export const resetPassword = async (token: string, password: string) => {
+  const data = await authRequest({ action: 'reset', token, password });
+  setToken(data.token);
+  return data.user as AuthUser;
+};
+
 export const logout = async () => {
   await authRequest({ action: 'logout' }).catch(() => undefined);
   clearToken();

@@ -11,6 +11,7 @@ import psycopg2
 import psycopg2.extras
 
 import db
+import mailer
 
 CORS = {
     'Access-Control-Allow-Origin': '*',
@@ -198,6 +199,152 @@ def handle_grant_admin(body: Dict[str, Any]) -> Dict[str, Any]:
     return respond(200, {'ok': True, 'email': email})
 
 
+def ensure_reset_schema() -> None:
+    conn = db.connect()
+    if not conn:
+        return
+    with conn, conn.cursor() as cur:
+        cur.execute(
+            """
+            CREATE TABLE IF NOT EXISTS password_resets (
+                token TEXT PRIMARY KEY,
+                user_email TEXT NOT NULL,
+                expires_at TIMESTAMPTZ NOT NULL,
+                used_at TIMESTAMPTZ,
+                created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+            );
+            CREATE INDEX IF NOT EXISTS password_resets_email_idx
+                ON password_resets (user_email, created_at DESC);
+            """
+        )
+    conn.close()
+
+
+def recent_reset_count(email: str) -> int:
+    conn = db.connect()
+    if not conn:
+        return 0
+    with conn, conn.cursor() as cur:
+        cur.execute(
+            f"SELECT COUNT(*) FROM password_resets WHERE user_email = {db._q(email)} "
+            "AND created_at > NOW() - INTERVAL '15 minutes'"
+        )
+        row = cur.fetchone()
+    conn.close()
+    return int(row[0]) if row else 0
+
+
+def handle_forgot(body: Dict[str, Any]) -> Dict[str, Any]:
+    """Отправляет на почту ссылку для смены забытого пароля."""
+    email = str(body.get('email') or '').strip().lower()
+    origin = str(body.get('origin') or '').strip().rstrip('/')
+
+    if not EMAIL_RE.match(email):
+        return respond(400, {'error': 'Введите корректный адрес электронной почты'})
+
+    ensure_auth_schema()
+    ensure_reset_schema()
+
+    done = {'ok': True, 'message': 'Если такая почта зарегистрирована, письмо уже отправлено'}
+
+    user = find_user(email)
+    if not user:
+        return respond(200, done)
+
+    if recent_reset_count(email) >= 3:
+        return respond(429, {
+            'error': 'Слишком много запросов. Подождите 15 минут и попробуйте снова.'
+        })
+
+    if not mailer.smtp_ready():
+        return respond(503, {
+            'error': 'Отправка писем пока не настроена. Обратитесь в поддержку.',
+            'needSmtp': True,
+        })
+
+    token = secrets.token_urlsafe(32)
+    expires = int(time.time()) + 3600
+
+    conn = db.connect()
+    if not conn:
+        return respond(503, {'error': 'База данных пока не подключена'})
+    with conn, conn.cursor() as cur:
+        cur.execute(
+            'INSERT INTO password_resets (token, user_email, expires_at) '
+            f'VALUES ({db._q(token)}, {db._q(email)}, to_timestamp({expires}))'
+        )
+    conn.close()
+
+    base = origin if origin.startswith('http') else 'https://zvuchi.ru'
+    link = f'{base}/reset?token={token}'
+
+    failed = mailer.send_reset_email(email, user.get('name') or '', link)
+    if failed:
+        return respond(502, {
+            'error': 'Не удалось отправить письмо. Попробуйте позже или напишите в поддержку.'
+        })
+
+    return respond(200, done)
+
+
+def handle_reset(body: Dict[str, Any]) -> Dict[str, Any]:
+    """Устанавливает новый пароль по ссылке из письма."""
+    token = str(body.get('token') or '').strip()
+    password = str(body.get('password') or '')
+
+    if len(password) < 6:
+        return respond(400, {'error': 'Пароль должен быть не короче 6 символов'})
+
+    ensure_auth_schema()
+    ensure_reset_schema()
+
+    conn = db.connect()
+    if not conn:
+        return respond(503, {'error': 'База данных пока не подключена'})
+
+    with conn, conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+        cur.execute(
+            f'SELECT user_email FROM password_resets WHERE token = {db._q(token)} '
+            'AND used_at IS NULL AND expires_at > NOW()'
+        )
+        row = cur.fetchone()
+
+    if not row:
+        conn.close()
+        return respond(400, {
+            'error': 'Ссылка устарела или уже использована. Запросите новую.'
+        })
+
+    email = row['user_email']
+    salt = secrets.token_hex(16)
+    digest = hash_password(password, salt)
+
+    with conn, conn.cursor() as cur:
+        cur.execute(
+            f'UPDATE users SET password_hash = {db._q(digest)}, '
+            f'password_salt = {db._q(salt)} WHERE email = {db._q(email)}'
+        )
+        cur.execute(
+            f'UPDATE password_resets SET used_at = NOW() WHERE token = {db._q(token)}'
+        )
+        cur.execute(f'DELETE FROM sessions WHERE user_email = {db._q(email)}')
+    conn.close()
+
+    user = find_user(email)
+    session = create_session(email)
+
+    return respond(200, {
+        'token': session,
+        'user': {
+            'email': user['email'],
+            'name': user['name'],
+            'plan': user['plan'],
+            'used': user['used_this_month'],
+            'isAdmin': bool(user.get('is_admin')),
+        },
+    })
+
+
 def handle_logout(token: str) -> Dict[str, Any]:
     conn = db.connect()
     if conn and token:
@@ -237,6 +384,10 @@ def handler(event: Dict[str, Any], context) -> Dict[str, Any]:
             return handle_logout(token)
         if action == 'grantAdmin':
             return handle_grant_admin(body)
+        if action == 'forgot':
+            return handle_forgot(body)
+        if action == 'reset':
+            return handle_reset(body)
         return respond(400, {'error': 'Неизвестное действие'})
 
     return respond(405, {'error': 'Метод не поддерживается'})

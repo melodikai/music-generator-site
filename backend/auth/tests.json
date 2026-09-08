@@ -14,6 +14,33 @@
       "expectedStatus": 400,
       "expectedBody": {"error": "string"},
       "bodyMatcher": "partial"
+    },
+    {
+      "name": "Восстановление: некорректная почта",
+      "method": "POST",
+      "path": "/",
+      "body": {"action": "forgot", "email": "not-an-email"},
+      "expectedStatus": 400,
+      "expectedBody": {"error": "string"},
+      "bodyMatcher": "partial"
+    },
+    {
+      "name": "Восстановление: незнакомая почта не раскрывается",
+      "method": "POST",
+      "path": "/",
+      "body": {"action": "forgot", "email": "nobody-here-test@example.com"},
+      "expectedStatus": 200,
+      "expectedBody": {"ok": true},
+      "bodyMatcher": "partial"
+    },
+    {
+      "name": "Смена пароля по битой ссылке",
+      "method": "POST",
+      "path": "/",
+      "body": {"action": "reset", "token": "broken-token", "password": "newpass123"},
+      "expectedStatus": 400,
+      "expectedBody": {"error": "string"},
+      "bodyMatcher": "partial"
     }
   ]
 }

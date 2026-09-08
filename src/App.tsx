@@ -8,6 +8,7 @@ import Index from "./pages/Index";
 import Showcase from "./pages/Showcase";
 import Privacy from "./pages/Privacy";
 import AdminSetup from "./pages/AdminSetup";
+import ResetPassword from "./pages/ResetPassword";
 import NotFound from "./pages/NotFound";
 import ErrorBoundary from "./components/ErrorBoundary";
 
@@ -25,6 +26,7 @@ const App = () => (
           <Route path="/showcase" element={<Showcase />} />
           <Route path="/privacy" element={<Privacy />} />
           <Route path="/admin-setup" element={<AdminSetup />} />
+          <Route path="/reset" element={<ResetPassword />} />
           {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
           <Route path="*" element={<NotFound />} />
         </Routes>
