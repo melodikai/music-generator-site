@@ -194,7 +194,10 @@ const Index = () => {
           break;
         }
         if (state.status === 'failed' || state.status === 'canceled') {
-          throw new Error('Движок не справился с этим запросом — попробуйте описать иначе');
+          throw new Error(
+            state.error ||
+              'Движок не справился с этим запросом — попробуйте запустить ещё раз',
+          );
         }
       }
 

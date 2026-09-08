@@ -113,8 +113,11 @@ def vocal_start(
         'model': VOCAL_MODEL,
         'instrumental': False,
         'title': (title or 'Трек')[:60],
-        'duration': int(seconds),
     }
+
+    # Просим движок уложиться в нужный хронометраж словами:
+    # отдельного поля длительности у шлюза нет.
+    length_hint = f'song length about {max(1, round(seconds / 60, 1))} minutes'
 
     if lyrics:
         body['custom'] = True
@@ -124,9 +127,11 @@ def vocal_start(
         body['tags'] = tags or 'pop'
         body['style'] = tags or 'pop'
     else:
-        body['prompt'] = ', '.join([p for p in (prompt, hint) if p])
+        body['prompt'] = ', '.join([p for p in (prompt, hint, length_hint) if p])
         if tags:
             body['tags'] = tags
+
+
 
     try:
         r = requests.post(
@@ -195,7 +200,11 @@ def vocal_result(task_id: str) -> Dict[str, Any]:
         return {'status': 'succeeded', 'audio': audio}
 
     if status in ('failed', 'error', 'canceled'):
-        return {'status': 'failed', 'error': 'Движок не смог создать песню по этому запросу'}
+        return {
+            'status': 'failed',
+            'error': 'Движок с вокалом не справился. Попробуйте ещё раз — '
+                     'обычно со второй попытки получается.',
+        }
 
     return {'status': 'processing'}
 
