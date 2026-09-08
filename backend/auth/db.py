@@ -46,9 +46,6 @@ def ensure_schema() -> None:
                 created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
             );
             CREATE INDEX IF NOT EXISTS tracks_user_idx ON tracks (user_email, created_at DESC);
-            ALTER TABLE tracks ADD COLUMN IF NOT EXISTS is_public BOOLEAN NOT NULL DEFAULT FALSE;
-            ALTER TABLE tracks ADD COLUMN IF NOT EXISTS plays INTEGER NOT NULL DEFAULT 0;
-            ALTER TABLE tracks ADD COLUMN IF NOT EXISTS likes INTEGER NOT NULL DEFAULT 0;
             """
         )
     conn.close()
@@ -111,60 +108,6 @@ def list_tracks(email: str = '', limit: int = 50) -> List[Dict[str, Any]]:
         }
         for r in rows
     ]
-
-
-def showcase_tracks(limit: int = 12) -> List[Dict[str, Any]]:
-    conn = connect()
-    if not conn:
-        return []
-    with conn, conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
-        cur.execute(
-            f"""
-            SELECT t.*, COALESCE(u.name, '') AS author
-            FROM tracks t LEFT JOIN users u ON u.email = t.user_email
-            WHERE t.is_public = TRUE AND t.audio_url IS NOT NULL
-            ORDER BY t.likes DESC, t.plays DESC, t.created_at DESC
-            LIMIT {int(limit)}
-            """
-        )
-        rows = cur.fetchall()
-    conn.close()
-    return [
-        {
-            'id': str(r['id']),
-            'title': r['title'],
-            'style': r['style'],
-            'mood': r['mood'],
-            'audio': r['audio_url'],
-            'image': r['image_url'],
-            'seconds': r['duration_seconds'],
-            'plays': r['plays'],
-            'likes': r['likes'],
-            'author': r['author'] or 'Автор Звучи',
-        }
-        for r in rows
-    ]
-
-
-def set_public(track_id: str, email: str, value: bool) -> None:
-    conn = connect()
-    if not conn:
-        return
-    with conn, conn.cursor() as cur:
-        cur.execute(
-            f"UPDATE tracks SET is_public = {'TRUE' if value else 'FALSE'} "
-            f"WHERE id = {int(track_id)} AND user_email = {_q(email)}"
-        )
-    conn.close()
-
-
-def add_like(track_id: str) -> None:
-    conn = connect()
-    if not conn:
-        return
-    with conn, conn.cursor() as cur:
-        cur.execute(f'UPDATE tracks SET likes = likes + 1 WHERE id = {int(track_id)}')
-    conn.close()
 
 
 def upsert_user(email: str, name: str, plan: str = 'free') -> Dict[str, Any]:

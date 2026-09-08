@@ -18,6 +18,7 @@ type Props = {
   credits: number;
   used: number;
   onSave: (name: string, email: string) => void;
+  onLogout?: () => void;
 };
 
 const PLANS = [
@@ -60,6 +61,7 @@ const AccountDialog = ({
   credits,
   used,
   onSave,
+  onLogout,
 }: Props) => {
   const [name, setName] = useState(userName);
   const [mail, setMail] = useState(email);
@@ -131,6 +133,16 @@ const AccountDialog = ({
               {saved && <Icon name="Check" size={15} />}
               {saved ? 'Сохранено' : 'Сохранить'}
             </button>
+            {onLogout && (
+              <button
+                type="button"
+                onClick={onLogout}
+                className="flex w-full items-center justify-center gap-2 rounded-xl border border-border px-4 py-2.5 text-[0.9em] text-muted-foreground transition-colors hover:text-foreground"
+              >
+                <Icon name="LogOut" size={15} />
+                Выйти из аккаунта
+              </button>
+            )}
           </TabsContent>
 
           <TabsContent value="limits" className="space-y-3 pt-4">

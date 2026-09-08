@@ -195,6 +195,10 @@ def handler(event: Dict[str, Any], context) -> Dict[str, Any]:
             db.ensure_schema()
             return respond(200, {'tracks': db.list_tracks(params.get('email') or '')})
 
+        if params.get('list') == 'showcase':
+            db.ensure_schema()
+            return respond(200, {'tracks': db.showcase_tracks(12)})
+
         prediction_id = params.get('id')
         if not prediction_id:
             return respond(400, {'error': 'Не указан идентификатор генерации'})
@@ -212,6 +216,18 @@ def handler(event: Dict[str, Any], context) -> Dict[str, Any]:
 
     if method == 'POST':
         body = json.loads(event.get('body') or '{}')
+        if body.get('action') == 'publish':
+            db.ensure_schema()
+            db.set_public(
+                str(body.get('trackId')), str(body.get('email') or ''), bool(body.get('public'))
+            )
+            return respond(200, {'ok': True})
+
+        if body.get('action') == 'like':
+            db.ensure_schema()
+            db.add_like(str(body.get('trackId')))
+            return respond(200, {'ok': True})
+
         if body.get('action') == 'profile':
             db.ensure_schema()
             return respond(200, {'user': db.upsert_user(

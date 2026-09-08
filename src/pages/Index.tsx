@@ -9,7 +9,17 @@ import TrackFeed from '@/components/studio/TrackFeed';
 import AccountDialog from '@/components/studio/AccountDialog';
 import DawEditor from '@/components/studio/DawEditor';
 import StemSplitter from '@/components/studio/StemSplitter';
-import { checkGeneration, fetchSavedTracks, saveProfile, startGeneration } from '@/lib/api';
+import AuthDialog from '@/components/studio/AuthDialog';
+import SiteFooter from '@/components/studio/SiteFooter';
+import {
+  checkGeneration,
+  fetchMe,
+  fetchSavedTracks,
+  logout,
+  saveProfile,
+  startGeneration,
+  type AuthUser,
+} from '@/lib/api';
 
 const STAGE_IMAGE =
   'https://cdn.poehali.dev/projects/1b7a339a-91f0-4ef8-9965-ce631414fd64/files/8a003fe7-72fb-4cd1-b63b-928feb3c181e.jpg';
@@ -29,8 +39,10 @@ const Index = () => {
   const [playing, setPlaying] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const [accountOpen, setAccountOpen] = useState(false);
-  const [profile, setProfile] = useState({ name: 'Анна Ковалёва', email: 'anna@zvuchi.ru' });
-  const [used, setUsed] = useState(12);
+  const [authOpen, setAuthOpen] = useState(false);
+  const [user, setUser] = useState<AuthUser | null>(null);
+  const [profile, setProfile] = useState({ name: 'Гость', email: '' });
+  const [used, setUsed] = useState(0);
   const timer = useRef<number | null>(null);
 
   const activeTrack = useMemo(
@@ -46,6 +58,18 @@ const Index = () => {
   );
 
   useEffect(() => {
+    fetchMe()
+      .then((me) => {
+        if (!me) return;
+        setUser(me);
+        setProfile({ name: me.name, email: me.email });
+        setUsed(me.used);
+      })
+      .catch(() => undefined);
+  }, []);
+
+  useEffect(() => {
+    if (!profile.email) return undefined;
     let cancelled = false;
     fetchSavedTracks(profile.email)
       .then((saved) => {
@@ -162,10 +186,19 @@ const Index = () => {
   const handleSection = (id: SectionId) => {
     setMenuOpen(false);
     if (id === 'account') {
-      setAccountOpen(true);
+      if (user) setAccountOpen(true);
+      else setAuthOpen(true);
       return;
     }
     setSection(id);
+  };
+
+  const handleLogout = async () => {
+    await logout();
+    setUser(null);
+    setProfile({ name: 'Гость', email: '' });
+    setUsed(0);
+    setAccountOpen(false);
   };
 
   const sidebar = (
@@ -179,11 +212,13 @@ const Index = () => {
         setMenuOpen(false);
       }}
       onAccount={() => {
-        setAccountOpen(true);
+        if (user) setAccountOpen(true);
+        else setAuthOpen(true);
         setMenuOpen(false);
       }}
-      userName={profile.name}
+      userName={user ? profile.name : 'Войти по почте'}
       credits={50}
+      guest={!user}
       onClose={() => setMenuOpen(false)}
     />
   );
@@ -215,7 +250,7 @@ const Index = () => {
               </span>
               <button
                 type="button"
-                onClick={() => setAccountOpen(true)}
+                onClick={() => (user ? setAccountOpen(true) : setAuthOpen(true))}
                 aria-label="Личный кабинет"
                 className="glass-panel grid h-9 w-9 place-items-center rounded-full text-foreground"
               >
@@ -311,6 +346,8 @@ const Index = () => {
                 />
               </>
             )}
+
+            <SiteFooter />
           </div>
         </main>
       </div>
@@ -348,6 +385,17 @@ const Index = () => {
         onSave={(name, email) => {
           setProfile({ name, email });
           saveProfile(email, name, 'standard').catch(() => undefined);
+        }}
+        onLogout={handleLogout}
+      />
+
+      <AuthDialog
+        open={authOpen}
+        onOpenChange={setAuthOpen}
+        onAuth={(me) => {
+          setUser(me);
+          setProfile({ name: me.name, email: me.email });
+          setUsed(me.used);
         }}
       />
     </div>

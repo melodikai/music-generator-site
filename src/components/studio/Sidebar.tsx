@@ -30,6 +30,7 @@ type Props = {
   onAccount: () => void;
   userName: string;
   credits: number;
+  guest?: boolean;
   onClose?: () => void;
 };
 
@@ -51,6 +52,7 @@ const StudioSidebar = ({
   onAccount,
   userName,
   credits,
+  guest,
   onClose,
 }: Props) => (
   <aside className="flex h-full flex-col px-3 py-3 pr-3.5">
@@ -94,6 +96,13 @@ const StudioSidebar = ({
           {item.label}
         </button>
       ))}
+      <a
+        href="/showcase"
+        className="flex items-center gap-2.5 rounded-[10px] px-3 py-2.5 text-left text-[0.93em] tracking-[0.005em] text-muted-foreground transition-colors hover:bg-secondary/60 hover:text-foreground"
+      >
+        <Icon name="Flame" size={15} className="opacity-85" fallback="Circle" />
+        Лучшие треки
+      </a>
     </nav>
 
     <p className="mb-2 mt-7 px-3 text-[0.72em] uppercase tracking-[0.14em] text-muted-foreground">
@@ -132,7 +141,7 @@ const StudioSidebar = ({
             {userName}
           </span>
           <span className="block text-[0.78em] leading-tight text-muted-foreground">
-            {credits} генераций в месяц
+            {guest ? 'История треков в аккаунте' : `${credits} генераций в месяц`}
           </span>
         </span>
       </button>

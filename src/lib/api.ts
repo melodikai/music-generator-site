@@ -2,6 +2,7 @@ import func2url from '../../backend/func2url.json';
 
 const MUSIC_URL = (func2url as Record<string, string>).music;
 const STEMS_URL = (func2url as Record<string, string>).stems;
+const AUTH_URL = (func2url as Record<string, string>).auth;
 
 export type StartResult = {
   id: string;
@@ -77,6 +78,88 @@ export const saveProfile = async (email: string, name: string, plan = 'free') =>
   const data = await res.json();
   return data.user as { email: string; name: string; plan: string; used: number };
 };
+
+export type AuthUser = { email: string; name: string; plan: string; used: number };
+
+const TOKEN_KEY = 'zvuchi_token';
+
+export const getToken = () => localStorage.getItem(TOKEN_KEY) || '';
+export const setToken = (token: string) => localStorage.setItem(TOKEN_KEY, token);
+export const clearToken = () => localStorage.removeItem(TOKEN_KEY);
+
+const authRequest = async (payload: Record<string, unknown>) => {
+  const res = await fetch(AUTH_URL, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'X-Auth-Token': getToken() },
+    body: JSON.stringify(payload),
+  });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.error || 'Не удалось выполнить запрос');
+  return data;
+};
+
+export const register = async (email: string, password: string, name: string) => {
+  const data = await authRequest({ action: 'register', email, password, name });
+  setToken(data.token);
+  return data.user as AuthUser;
+};
+
+export const login = async (email: string, password: string) => {
+  const data = await authRequest({ action: 'login', email, password });
+  setToken(data.token);
+  return data.user as AuthUser;
+};
+
+export const logout = async () => {
+  await authRequest({ action: 'logout' }).catch(() => undefined);
+  clearToken();
+};
+
+export const fetchMe = async (): Promise<AuthUser | null> => {
+  const token = getToken();
+  if (!token) return null;
+  const res = await fetch(AUTH_URL, { headers: { 'X-Auth-Token': token } });
+  if (!res.ok) {
+    clearToken();
+    return null;
+  }
+  const data = await res.json();
+  return data.user as AuthUser;
+};
+
+export type ShowcaseTrack = {
+  id: string;
+  title: string;
+  style: string;
+  mood: string;
+  audio: string | null;
+  image: string | null;
+  seconds: number;
+  plays: number;
+  likes: number;
+  author: string;
+};
+
+export const fetchShowcase = async (): Promise<ShowcaseTrack[]> => {
+  const res = await fetch(`${MUSIC_URL}?list=showcase`);
+  if (!res.ok) return [];
+  const data = await res.json();
+  return data.tracks || [];
+};
+
+export const publishTrack = (trackId: string, email: string, isPublic: boolean) =>
+  fetch(MUSIC_URL, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ action: 'publish', trackId, email, public: isPublic }),
+  });
+
+export const likeTrack = (trackId: string) =>
+  fetch(MUSIC_URL, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ action: 'like', trackId }),
+  });
 
 export type Stem = { id: string; name: string; url: string };
 
