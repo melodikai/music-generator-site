@@ -4,6 +4,7 @@ import { cn } from '@/lib/utils';
 import { MOODS, PROMPT_IDEAS, STYLES, TYPING_PLACEHOLDER } from '@/lib/studio-data';
 import PhotoDrop from '@/components/studio/PhotoDrop';
 import type { Usage } from '@/lib/api';
+import { detectStyle } from '@/lib/style-detect';
 
 type Props = {
   value: string;
@@ -82,6 +83,7 @@ const PromptPanel = ({
   onRequestAuth,
 }: Props) => {
   const vocalAllowed = usage.vocalLimit > 0;
+  const spokenStyle = detectStyle(`${value} ${lyrics}`);
   const [focused, setFocused] = useState(false);
   const [open, setOpen] = useState(false);
   const [photoOpen, setPhotoOpen] = useState(false);
@@ -281,15 +283,24 @@ const PromptPanel = ({
                     onClick={() => onStyle(item)}
                     className={cn(
                       'rounded-full px-3 py-1.5 text-[0.82em] transition-colors',
-                      style === item
+                      style === item && !spokenStyle
                         ? 'bg-primary text-primary-foreground'
                         : 'bg-white/10 text-foreground/75 hover:text-foreground',
+                      spokenStyle && style === item && 'opacity-50',
                     )}
                   >
                     {item}
                   </button>
                 ))}
               </div>
+              {spokenStyle && (
+                <p className="mt-2 flex items-start gap-1.5 text-[0.8em] leading-relaxed text-foreground/55">
+                  <Icon name="Sparkles" size={13} className="mt-[3px] flex-none" />
+                  <span>
+                    В запросе указан стиль «{spokenStyle}» — возьмём его, а не выбранный здесь.
+                  </span>
+                </p>
+              )}
             </div>
             <div>
               <p className="mb-2 text-[0.72em] uppercase tracking-[0.14em] text-foreground/50">
@@ -407,9 +418,11 @@ const PromptPanel = ({
           !error && (
             <div className="mt-3">
               <p className="text-[0.85em] text-foreground/45">
-                {image
-                  ? 'Фото готово — нажмите стрелку, чтобы собрать трек'
-                  : 'Опишите настроение, инструменты и темп'}
+                {spokenStyle
+                  ? `Стиль из запроса: ${spokenStyle}`
+                  : image
+                    ? 'Фото готово — нажмите стрелку, чтобы собрать трек'
+                    : 'Опишите настроение, инструменты и темп'}
               </p>
               <p className="mt-1.5 text-[0.78em] text-foreground/35">
                 {withVocal && vocalAllowed

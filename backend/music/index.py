@@ -8,6 +8,7 @@ import requests
 
 import db
 import limits
+import styles
 from storage import upload_file
 
 VOCAL_API_URL = os.environ.get('VOCAL_API_URL', 'https://gptunnel.ru/v1/media/create')
@@ -327,15 +328,40 @@ def image_mood_prompt(image_data_url: str) -> str:
     return ', '.join(parts)
 
 
-def build_prompt(text: str, style: str, mood: str, vocal: bool) -> str:
+def build_prompt(
+    text: str,
+    style: str,
+    mood: str,
+    vocal: bool,
+    lyrics: str = '',
+) -> Dict[str, str]:
+    """Собирает запрос для движка. Стиль из текста пользователя важнее выбранного в настройках."""
+    spoken = f'{text} {lyrics}'.strip()
+    from_text = styles.detect_style(spoken)
+
+    if from_text:
+        style_title, style_line = from_text
+    else:
+        style_title = style
+        style_line = styles.style_prompt(style)
+
     parts = [text.strip()]
-    if style:
-        parts.append(style)
-    if mood:
-        parts.append(mood)
+    if style_line:
+        parts.append(style_line)
+
+    mood_line = styles.mood_prompt(mood)
+    if mood_line:
+        parts.append(mood_line)
+
     parts.append('vocals' if vocal else 'instrumental')
     parts.append('high quality, clean mix')
-    return ', '.join(p for p in parts if p)
+
+    return {
+        'prompt': ', '.join(p for p in parts if p),
+        'style': style_title,
+        'styleLine': style_line,
+        'fromText': 'yes' if from_text else '',
+    }
 
 
 def handle_start(body: Dict[str, Any]) -> Dict[str, Any]:
@@ -384,12 +410,15 @@ def handle_start(body: Dict[str, Any]) -> Dict[str, Any]:
     duration = int(body.get('duration') or 47)
     duration = max(10, min(plan_cfg['maxSeconds'], duration))
 
-    full_prompt = build_prompt(
+    built = build_prompt(
         text,
         str(body.get('style') or ''),
         str(body.get('mood') or ''),
         wants_vocal,
+        str(body.get('lyrics') or ''),
     )
+    full_prompt = built['prompt']
+    final_style = built['style']
 
     if photo_mood:
         full_prompt = f'{full_prompt}, {photo_mood}'
@@ -399,7 +428,7 @@ def handle_start(body: Dict[str, Any]) -> Dict[str, Any]:
         'deviceId': device_id,
         'title': str(body.get('title') or ''),
         'prompt': text,
-        'style': str(body.get('style') or ''),
+        'style': final_style,
         'mood': str(body.get('mood') or ''),
         'imageUrl': image_url,
         'seconds': duration,
@@ -417,7 +446,7 @@ def handle_start(body: Dict[str, Any]) -> Dict[str, Any]:
 
         started = vocal_start(
             text,
-            str(body.get('style') or ''),
+            built['styleLine'] or final_style,
             text[:60] or 'Песня',
             str(body.get('voice') or 'any'),
             str(body.get('lyrics') or '').strip(),
@@ -437,6 +466,7 @@ def handle_start(body: Dict[str, Any]) -> Dict[str, Any]:
             'engine': 'vocal',
             'caption': source_note,
             'prompt': text,
+            'style': final_style,
             'seconds': vocal_seconds,
             'imageUrl': image_url if image else None,
             'usage': limits.usage_snapshot(email, device_id),
@@ -453,6 +483,7 @@ def handle_start(body: Dict[str, Any]) -> Dict[str, Any]:
             'engine': 'huggingface',
             'caption': source_note,
             'prompt': text,
+            'style': final_style,
             'seconds': duration,
             'imageUrl': image_url if image else None,
             'usage': limits.usage_snapshot(email, device_id),
@@ -467,6 +498,7 @@ def handle_start(body: Dict[str, Any]) -> Dict[str, Any]:
         'audio': None,
         'caption': source_note,
         'prompt': full_prompt,
+        'style': final_style,
         'seconds': duration,
         'imageUrl': image_url if image else None,
         'usage': limits.usage_snapshot(email, device_id),
