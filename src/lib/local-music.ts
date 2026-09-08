@@ -92,7 +92,7 @@ export const generateLocalTrack = async (params: Params): Promise<Blob> => {
   const scale = SCALES[preset.scale];
   const shift = MOOD_SHIFT[params.mood] ?? 0;
 
-  const rate = 32000;
+  const rate = 22050;
   const duration = Math.max(20, Math.min(40, params.seconds || 32));
   const ctx = new OfflineAudioContext(1, rate * duration, rate);
 

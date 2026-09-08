@@ -30,12 +30,28 @@ export const startGeneration = async (payload: {
   image?: string | null;
   duration?: number;
 }): Promise<StartResult> => {
-  const res = await fetch(MUSIC_URL, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(payload),
-  });
-  const data = await res.json();
+  const body = JSON.stringify(payload);
+
+  if (body.length > 1_800_000) {
+    throw new Error('Фото слишком большое — выберите файл поменьше');
+  }
+
+  let res: Response;
+  try {
+    res = await fetch(MUSIC_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body,
+    });
+  } catch {
+    throw new Error('Нет связи с сервером — проверьте интернет и попробуйте ещё раз');
+  }
+
+  if (res.status === 413) {
+    throw new Error('Фото слишком большое — выберите файл поменьше');
+  }
+
+  const data = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error(data.error || 'Не удалось запустить генерацию');
   return data;
 };
@@ -45,10 +61,14 @@ export const checkGeneration = async (
   meta: Record<string, string> = {},
 ): Promise<StatusResult> => {
   const query = new URLSearchParams({ id, ...meta }).toString();
-  const res = await fetch(`${MUSIC_URL}?${query}`);
-  const data = await res.json();
-  if (!res.ok) throw new Error(data.error || 'Ошибка проверки статуса');
-  return data;
+  try {
+    const res = await fetch(`${MUSIC_URL}?${query}`);
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Ошибка проверки статуса');
+    return data;
+  } catch {
+    return { id, status: 'processing', audio: null };
+  }
 };
 
 export const saveLocalTrack = async (payload: {
@@ -61,14 +81,19 @@ export const saveLocalTrack = async (payload: {
   imageUrl?: string | null;
   seconds?: number;
 }): Promise<string | null> => {
-  const res = await fetch(MUSIC_URL, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ action: 'saveLocal', ...payload }),
-  });
-  if (!res.ok) return null;
-  const data = await res.json();
-  return data.audio || null;
+  if (payload.audio.length > 1_600_000) return null;
+  try {
+    const res = await fetch(MUSIC_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'saveLocal', ...payload }),
+    });
+    if (!res.ok) return null;
+    const data = await res.json();
+    return data.audio || null;
+  } catch {
+    return null;
+  }
 };
 
 export type SavedTrack = {
@@ -209,4 +234,3 @@ export type StemsStatus = {
   stems: Stem[];
   error?: string | null;
 };
-

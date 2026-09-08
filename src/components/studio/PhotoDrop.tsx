@@ -9,13 +9,39 @@ type Props = {
 };
 
 const MAX_MB = 8;
+const MAX_SIDE = 1024;
+
+const shrink = (file: File): Promise<string> =>
+  new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onerror = () => reject(new Error('read'));
+    reader.onload = () => {
+      const img = new Image();
+      img.onerror = () => reject(new Error('decode'));
+      img.onload = () => {
+        const scale = Math.min(1, MAX_SIDE / Math.max(img.width, img.height));
+        const canvas = document.createElement('canvas');
+        canvas.width = Math.round(img.width * scale);
+        canvas.height = Math.round(img.height * scale);
+        const ctx = canvas.getContext('2d');
+        if (!ctx) {
+          resolve(String(reader.result));
+          return;
+        }
+        ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+        resolve(canvas.toDataURL('image/jpeg', 0.82));
+      };
+      img.src = String(reader.result);
+    };
+    reader.readAsDataURL(file);
+  });
 
 const PhotoDrop = ({ image, onImage, onClose }: Props) => {
   const input = useRef<HTMLInputElement>(null);
   const [over, setOver] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const read = (file: File) => {
+  const read = async (file: File) => {
     if (!file.type.startsWith('image/')) {
       setError('Нужен файл-изображение: JPG, PNG или WebP');
       return;
@@ -25,9 +51,11 @@ const PhotoDrop = ({ image, onImage, onClose }: Props) => {
       return;
     }
     setError(null);
-    const reader = new FileReader();
-    reader.onload = () => onImage(String(reader.result));
-    reader.readAsDataURL(file);
+    try {
+      onImage(await shrink(file));
+    } catch {
+      setError('Не удалось прочитать это изображение');
+    }
   };
 
   const drop = (e: DragEvent<HTMLDivElement>) => {
