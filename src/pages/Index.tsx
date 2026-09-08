@@ -245,7 +245,7 @@ const Index = () => {
         setMenuOpen(false);
       }}
       userName={user ? profile.name : 'Войти по почте'}
-      credits={50}
+      credits={user?.isAdmin ? 999999 : 50}
       guest={!user}
       onClose={() => setMenuOpen(false)}
     />
@@ -408,7 +408,7 @@ const Index = () => {
         onOpenChange={setAccountOpen}
         userName={profile.name}
         email={profile.email}
-        credits={50}
+        credits={user?.isAdmin ? 999999 : 50}
         used={used}
         onSave={(name, email) => {
           setProfile({ name, email });

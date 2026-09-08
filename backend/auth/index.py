@@ -43,6 +43,7 @@ def ensure_auth_schema() -> None:
             """
             ALTER TABLE users ADD COLUMN IF NOT EXISTS password_hash TEXT;
             ALTER TABLE users ADD COLUMN IF NOT EXISTS password_salt TEXT;
+            ALTER TABLE users ADD COLUMN IF NOT EXISTS is_admin BOOLEAN NOT NULL DEFAULT FALSE;
             CREATE TABLE IF NOT EXISTS sessions (
                 token TEXT PRIMARY KEY,
                 user_email TEXT NOT NULL,
@@ -81,7 +82,7 @@ def user_by_token(token: str) -> Dict[str, Any]:
     with conn, conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
         cur.execute(
             f"""
-            SELECT u.email, u.name, u.plan, u.used_this_month
+            SELECT u.email, u.name, u.plan, u.used_this_month, u.is_admin
             FROM sessions s JOIN users u ON u.email = s.user_email
             WHERE s.token = {db._q(token)} AND s.expires_at > NOW()
             """
@@ -95,6 +96,7 @@ def user_by_token(token: str) -> Dict[str, Any]:
         'name': row['name'],
         'plan': row['plan'],
         'used': row['used_this_month'],
+        'isAdmin': bool(row['is_admin']),
     }
 
 
@@ -104,7 +106,7 @@ def find_user(email: str) -> Dict[str, Any]:
         return {}
     with conn, conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
         cur.execute(
-            f'SELECT email, name, plan, used_this_month, password_hash, password_salt '
+            f'SELECT email, name, plan, used_this_month, password_hash, password_salt, is_admin '
             f'FROM users WHERE email = {db._q(email)}'
         )
         row = cur.fetchone()
@@ -142,7 +144,7 @@ def handle_register(body: Dict[str, Any]) -> Dict[str, Any]:
     token = create_session(email)
     return respond(200, {
         'token': token,
-        'user': {'email': email, 'name': name, 'plan': 'free', 'used': 0},
+        'user': {'email': email, 'name': name, 'plan': 'free', 'used': 0, 'isAdmin': False},
     })
 
 
@@ -167,8 +169,33 @@ def handle_login(body: Dict[str, Any]) -> Dict[str, Any]:
             'name': user['name'],
             'plan': user['plan'],
             'used': user['used_this_month'],
+            'isAdmin': bool(user.get('is_admin')),
         },
     })
+
+
+def handle_grant_admin(body: Dict[str, Any]) -> Dict[str, Any]:
+    """Выдаёт права администратора владельцу проекта по секретному ключу."""
+    secret = os.environ.get('ADMIN_SETUP_KEY') or ''
+    provided = str(body.get('key') or '')
+    email = str(body.get('email') or '').strip().lower()
+
+    if not secret or not hmac.compare_digest(provided, secret):
+        return respond(403, {'error': 'Неверный ключ администратора'})
+
+    ensure_auth_schema()
+    if not find_user(email):
+        return respond(404, {'error': 'Сначала зарегистрируйте эту почту'})
+
+    conn = db.connect()
+    if not conn:
+        return respond(503, {'error': 'База данных пока не подключена'})
+    with conn, conn.cursor() as cur:
+        cur.execute(
+            f"UPDATE users SET is_admin = TRUE, plan = 'premium' WHERE email = {db._q(email)}"
+        )
+    conn.close()
+    return respond(200, {'ok': True, 'email': email})
 
 
 def handle_logout(token: str) -> Dict[str, Any]:
@@ -208,6 +235,8 @@ def handler(event: Dict[str, Any], context) -> Dict[str, Any]:
             return handle_login(body)
         if action == 'logout':
             return handle_logout(token)
+        if action == 'grantAdmin':
+            return handle_grant_admin(body)
         return respond(400, {'error': 'Неизвестное действие'})
 
     return respond(405, {'error': 'Метод не поддерживается'})

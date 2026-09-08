@@ -141,7 +141,11 @@ const StudioSidebar = ({
             {userName}
           </span>
           <span className="block text-[0.78em] leading-tight text-muted-foreground">
-            {guest ? 'История треков в аккаунте' : `${credits} генераций в месяц`}
+            {guest
+              ? 'История треков в аккаунте'
+              : credits > 9999
+                ? 'Администратор · без ограничений'
+                : `${credits} генераций в месяц`}
           </span>
         </span>
       </button>

@@ -13,6 +13,9 @@ REPLICATE_API = 'https://api.replicate.com/v1'
 MUSIC_MODEL = os.environ.get('MUSIC_MODEL', 'stackadoc/stable-audio-open-1.0')
 CAPTION_MODEL = os.environ.get('CAPTION_MODEL', 'salesforce/blip')
 
+VOCAL_API_URL = os.environ.get('VOCAL_API_URL', 'https://gptunnel.ru/v1/suno/generate')
+VOCAL_MODEL = os.environ.get('VOCAL_MODEL', 'suno-v5')
+
 HF_API = 'https://api-inference.huggingface.co/models'
 HF_MUSIC_MODEL = os.environ.get('HF_MUSIC_MODEL', 'facebook/musicgen-small')
 HF_CAPTION_MODEL = os.environ.get('HF_CAPTION_MODEL', 'Salesforce/blip-image-captioning-base')
@@ -106,6 +109,63 @@ def describe_image(image_url: str) -> str:
         if data['status'] in ('failed', 'canceled'):
             return ''
     return ''
+
+
+def vocal_token() -> Optional[str]:
+    return os.environ.get('VOCAL_API_KEY')
+
+
+def vocal_generate(prompt: str, style: str, title: str) -> Optional[str]:
+    """Генерирует песню с вокалом и текстом через российский шлюз к Suno."""
+    key = vocal_token()
+    if not key:
+        return None
+
+    try:
+        r = requests.post(
+            VOCAL_API_URL,
+            headers={'Authorization': key, 'Content-Type': 'application/json'},
+            json={
+                'model': VOCAL_MODEL,
+                'prompt': prompt,
+                'tags': style,
+                'title': title[:60] or 'Трек',
+                'customMode': False,
+                'instrumental': False,
+                'make_instrumental': False,
+            },
+            timeout=240,
+        )
+        if r.status_code >= 400:
+            return None
+        data = r.json()
+    except (requests.RequestException, ValueError):
+        return None
+
+    audio = None
+    if isinstance(data, dict):
+        for key_name in ('audio_url', 'audioUrl', 'url', 'audio'):
+            if data.get(key_name):
+                audio = data[key_name]
+                break
+        if not audio:
+            items = data.get('data') or data.get('clips') or data.get('result')
+            if isinstance(items, list) and items:
+                first = items[0]
+                if isinstance(first, dict):
+                    audio = first.get('audio_url') or first.get('audioUrl') or first.get('url')
+                elif isinstance(first, str):
+                    audio = first
+    if not audio:
+        return None
+
+    try:
+        file = requests.get(str(audio), timeout=120)
+        if file.status_code >= 400:
+            return None
+        return upload_file('tracks', 'mp3', file.content, 'audio/mpeg')
+    except requests.RequestException:
+        return None
 
 
 def hf_token() -> Optional[str]:
@@ -217,6 +277,31 @@ def handle_start(body: Dict[str, Any]) -> Dict[str, Any]:
         'imageUrl': image_url,
         'seconds': duration,
     }
+
+    wants_vocal = bool(body.get('vocal'))
+
+    if wants_vocal:
+        if not vocal_token():
+            return respond(503, {
+                'error': 'Песни со словами пока недоступны: не подключён движок с вокалом. '
+                         'Снимите флажок «С текстом», чтобы создать инструментал.',
+                'needVocalEngine': True,
+            })
+        audio = vocal_generate(text, str(body.get('style') or ''), text[:60])
+        if audio:
+            store_track(audio, meta, f'vocal-{int(time.time())}')
+            return respond(200, {
+                'id': f'vocal-{int(time.time())}',
+                'status': 'succeeded',
+                'audio': audio,
+                'engine': 'vocal',
+                'caption': source_note,
+                'prompt': text,
+                'imageUrl': image_url if image else None,
+            })
+        return respond(502, {
+            'error': 'Движок с вокалом не ответил. Попробуйте ещё раз через минуту.'
+        })
 
     audio = hf_generate_music(full_prompt, duration)
     if audio:

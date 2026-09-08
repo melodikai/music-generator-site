@@ -101,7 +101,24 @@ export const saveProfile = async (email: string, name: string, plan = 'free') =>
   return data.user as { email: string; name: string; plan: string; used: number };
 };
 
-export type AuthUser = { email: string; name: string; plan: string; used: number };
+export type AuthUser = {
+  email: string;
+  name: string;
+  plan: string;
+  used: number;
+  isAdmin?: boolean;
+};
+
+export const grantAdmin = async (email: string, key: string) => {
+  const res = await fetch(AUTH_URL, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ action: 'grantAdmin', email, key }),
+  });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.error || 'Не удалось выдать права');
+  return data;
+};
 
 const TOKEN_KEY = 'zvuchi_token';
 
