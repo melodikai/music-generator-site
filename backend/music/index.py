@@ -41,15 +41,37 @@ def headers() -> Dict[str, str]:
 
 def latest_version(model: str) -> str:
     r = requests.get(f'{REPLICATE_API}/models/{model}', headers=headers(), timeout=15)
-    r.raise_for_status()
+    if r.status_code >= 400:
+        raise provider_message(r.status_code, r.text)
     return r.json()['latest_version']['id']
+
+
+class ProviderError(Exception):
+    def __init__(self, message: str, status: int = 502):
+        super().__init__(message)
+        self.message = message
+        self.status = status
+
+
+def provider_message(status_code: int, text: str) -> ProviderError:
+    if status_code == 402 or 'Insufficient credit' in text:
+        return ProviderError(
+            'На балансе сервиса генерации закончились средства. '
+            'Пополните счёт Replicate — после этого генерация заработает.',
+            402,
+        )
+    if status_code in (401, 403):
+        return ProviderError('Ключ доступа к сервису генерации недействителен.', 401)
+    if status_code == 429:
+        return ProviderError('Сервис генерации перегружен. Попробуйте через минуту.', 429)
+    return ProviderError('Сервис генерации временно недоступен. Попробуйте позже.', 502)
 
 
 def start_prediction(model: str, payload: Dict[str, Any]) -> Dict[str, Any]:
     body = {'version': latest_version(model), 'input': payload}
     r = requests.post(f'{REPLICATE_API}/predictions', headers=headers(), json=body, timeout=20)
     if r.status_code >= 400:
-        raise RuntimeError(r.text)
+        raise provider_message(r.status_code, r.text)
     return r.json()
 
 
@@ -204,15 +226,18 @@ def handler(event: Dict[str, Any], context) -> Dict[str, Any]:
             return respond(400, {'error': 'Не указан идентификатор генерации'})
         if not token():
             return respond(503, {'error': 'Генерация временно недоступна: не настроен доступ к движку'})
-        return handle_status(prediction_id, {
-            'email': params.get('email') or '',
-            'title': params.get('title') or '',
-            'prompt': params.get('prompt') or '',
-            'style': params.get('style') or '',
-            'mood': params.get('mood') or '',
-            'imageUrl': params.get('imageUrl'),
-            'seconds': params.get('seconds') or 0,
-        })
+        try:
+            return handle_status(prediction_id, {
+                'email': params.get('email') or '',
+                'title': params.get('title') or '',
+                'prompt': params.get('prompt') or '',
+                'style': params.get('style') or '',
+                'mood': params.get('mood') or '',
+                'imageUrl': params.get('imageUrl'),
+                'seconds': params.get('seconds') or 0,
+            })
+        except ProviderError as e:
+            return respond(e.status, {'error': e.message})
 
     if method == 'POST':
         body = json.loads(event.get('body') or '{}')
@@ -237,6 +262,9 @@ def handler(event: Dict[str, Any], context) -> Dict[str, Any]:
             )})
         if not token():
             return respond(503, {'error': 'Генерация временно недоступна: не настроен доступ к движку'})
-        return handle_start(body)
+        try:
+            return handle_start(body)
+        except ProviderError as e:
+            return respond(e.status, {'error': e.message})
 
     return respond(405, {'error': 'Метод не поддерживается'})
