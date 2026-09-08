@@ -18,8 +18,10 @@ import {
   logout,
   saveProfile,
   startGeneration,
+  saveLocalTrack,
   type AuthUser,
 } from '@/lib/api';
+import { blobToDataUrl, generateLocalTrack } from '@/lib/local-music';
 
 const STAGE_IMAGE =
   'https://cdn.poehali.dev/projects/1b7a339a-91f0-4ef8-9965-ce631414fd64/files/8a003fe7-72fb-4cd1-b63b-928feb3c181e.jpg';
@@ -125,8 +127,32 @@ const Index = () => {
         image,
       });
 
-      let audio: string | null = null;
-      for (let i = 0; i < 90; i += 1) {
+      let audio: string | null = started.audio || null;
+
+      if (started.status === 'local') {
+        setProgress(60);
+        const blob = await generateLocalTrack({
+          prompt: started.prompt || text,
+          style,
+          mood,
+          vocal: withVocal,
+          seconds: 40,
+        });
+        const dataUrl = await blobToDataUrl(blob);
+        audio =
+          (await saveLocalTrack({
+            audio: dataUrl,
+            email: profile.email,
+            title: text.slice(0, 40),
+            prompt: text,
+            style,
+            mood,
+            imageUrl: started.imageUrl,
+            seconds: 40,
+          })) || URL.createObjectURL(blob);
+      }
+
+      for (let i = 0; !audio && i < 90; i += 1) {
         await new Promise((r) => window.setTimeout(r, 3000));
         const state = await checkGeneration(started.id, {
           email: profile.email,

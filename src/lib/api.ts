@@ -7,6 +7,8 @@ const AUTH_URL = (func2url as Record<string, string>).auth;
 export type StartResult = {
   id: string;
   status: string;
+  audio?: string | null;
+  engine?: 'huggingface' | 'replicate' | 'browser';
   caption?: string;
   prompt?: string;
   imageUrl?: string | null;
@@ -46,6 +48,26 @@ export const checkGeneration = async (
   const data = await res.json();
   if (!res.ok) throw new Error(data.error || 'Ошибка проверки статуса');
   return data;
+};
+
+export const saveLocalTrack = async (payload: {
+  audio: string;
+  email?: string;
+  title?: string;
+  prompt?: string;
+  style?: string;
+  mood?: string;
+  imageUrl?: string | null;
+  seconds?: number;
+}): Promise<string | null> => {
+  const res = await fetch(MUSIC_URL, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ action: 'saveLocal', ...payload }),
+  });
+  if (!res.ok) return null;
+  const data = await res.json();
+  return data.audio || null;
 };
 
 export type SavedTrack = {
