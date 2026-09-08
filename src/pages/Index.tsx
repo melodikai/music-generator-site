@@ -128,7 +128,9 @@ const Index = () => {
       });
 
       let audio: string | null = started.audio || null;
-      const localMode = started.status === 'local' || started.engine === 'browser';
+      const localMode =
+        started.engine !== 'vocal' &&
+        (started.status === 'local' || started.engine === 'browser');
 
       if (!audio && localMode) {
         setProgress(55);
@@ -154,7 +156,8 @@ const Index = () => {
         audio = stored || URL.createObjectURL(blob);
       }
 
-      for (let i = 0; !audio && !localMode && i < 90; i += 1) {
+      const attempts = started.engine === 'vocal' ? 160 : 90;
+      for (let i = 0; !audio && !localMode && i < attempts; i += 1) {
         await new Promise((r) => window.setTimeout(r, 3000));
         const state = await checkGeneration(started.id, {
           email: profile.email,

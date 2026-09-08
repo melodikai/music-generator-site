@@ -13,8 +13,9 @@ REPLICATE_API = 'https://api.replicate.com/v1'
 MUSIC_MODEL = os.environ.get('MUSIC_MODEL', 'stackadoc/stable-audio-open-1.0')
 CAPTION_MODEL = os.environ.get('CAPTION_MODEL', 'salesforce/blip')
 
-VOCAL_API_URL = os.environ.get('VOCAL_API_URL', 'https://gptunnel.ru/v1/suno/generate')
-VOCAL_MODEL = os.environ.get('VOCAL_MODEL', 'suno-v5')
+VOCAL_API_URL = os.environ.get('VOCAL_API_URL', 'https://gptunnel.ru/v1/media/create')
+VOCAL_RESULT_URL = os.environ.get('VOCAL_RESULT_URL', 'https://gptunnel.ru/v1/media/result')
+VOCAL_MODEL = os.environ.get('VOCAL_MODEL', 'suno')
 
 HF_API = 'https://api-inference.huggingface.co/models'
 HF_MUSIC_MODEL = os.environ.get('HF_MUSIC_MODEL', 'facebook/musicgen-small')
@@ -115,57 +116,114 @@ def vocal_token() -> Optional[str]:
     return os.environ.get('VOCAL_API_KEY')
 
 
-def vocal_generate(prompt: str, style: str, title: str) -> Optional[str]:
-    """Генерирует песню с вокалом и текстом через российский шлюз к Suno."""
+def extract_audio_url(data: Any) -> Optional[str]:
+    """Ищет ссылку на аудио в ответе шлюза любой формы."""
+    if isinstance(data, str):
+        return data if data.startswith('http') and '.mp3' in data or data.startswith('http') else None
+    if isinstance(data, list):
+        for item in data:
+            found = extract_audio_url(item)
+            if found:
+                return found
+        return None
+    if isinstance(data, dict):
+        for name in ('audio_url', 'audioUrl', 'audio', 'url', 'source_audio_url'):
+            value = data.get(name)
+            if isinstance(value, str) and value.startswith('http'):
+                return value
+        for value in data.values():
+            if isinstance(value, (dict, list)):
+                found = extract_audio_url(value)
+                if found:
+                    return found
+    return None
+
+
+def vocal_start(prompt: str, style: str, title: str) -> Dict[str, Any]:
+    """Ставит задачу на песню с вокалом в очередь российского шлюза."""
     key = vocal_token()
     if not key:
-        return None
+        return {'error': 'no-key'}
+
+    body = {
+        'model': VOCAL_MODEL,
+        'prompt': prompt,
+        'instrumental': False,
+        'title': (title or 'Трек')[:60],
+    }
+    if style:
+        body['tags'] = style
 
     try:
         r = requests.post(
             VOCAL_API_URL,
             headers={'Authorization': key, 'Content-Type': 'application/json'},
-            json={
-                'model': VOCAL_MODEL,
-                'prompt': prompt,
-                'tags': style,
-                'title': title[:60] or 'Трек',
-                'customMode': False,
-                'instrumental': False,
-                'make_instrumental': False,
-            },
-            timeout=240,
+            json=body,
+            timeout=60,
         )
-        if r.status_code >= 400:
-            return None
-        data = r.json()
-    except (requests.RequestException, ValueError):
-        return None
-
-    audio = None
-    if isinstance(data, dict):
-        for key_name in ('audio_url', 'audioUrl', 'url', 'audio'):
-            if data.get(key_name):
-                audio = data[key_name]
-                break
-        if not audio:
-            items = data.get('data') or data.get('clips') or data.get('result')
-            if isinstance(items, list) and items:
-                first = items[0]
-                if isinstance(first, dict):
-                    audio = first.get('audio_url') or first.get('audioUrl') or first.get('url')
-                elif isinstance(first, str):
-                    audio = first
-    if not audio:
-        return None
+    except requests.RequestException as e:
+        return {'error': f'network: {e}'}
 
     try:
-        file = requests.get(str(audio), timeout=120)
-        if file.status_code >= 400:
-            return None
-        return upload_file('tracks', 'mp3', file.content, 'audio/mpeg')
-    except requests.RequestException:
-        return None
+        data = r.json()
+    except ValueError:
+        return {'error': f'bad-response: {r.status_code} {r.text[:200]}'}
+
+    if r.status_code >= 400:
+        return {'error': f'{r.status_code}: {json.dumps(data, ensure_ascii=False)[:300]}'}
+
+    task_id = None
+    if isinstance(data, dict):
+        for name in ('id', 'task_id', 'taskId', 'requestId'):
+            if data.get(name):
+                task_id = data[name]
+                break
+        if not task_id and isinstance(data.get('data'), dict):
+            inner = data['data']
+            for name in ('id', 'task_id', 'taskId'):
+                if inner.get(name):
+                    task_id = inner[name]
+                    break
+    if not task_id:
+        return {'error': f'no-task-id: {json.dumps(data, ensure_ascii=False)[:300]}'}
+
+    return {'taskId': str(task_id)}
+
+
+def vocal_result(task_id: str) -> Dict[str, Any]:
+    """Проверяет готовность песни и возвращает ссылку на аудио."""
+    key = vocal_token()
+    if not key:
+        return {'status': 'failed', 'error': 'Движок с вокалом не подключён'}
+
+    try:
+        r = requests.post(
+            VOCAL_RESULT_URL,
+            headers={'Authorization': key, 'Content-Type': 'application/json'},
+            json={'task_id': task_id},
+            timeout=60,
+        )
+        data = r.json()
+    except (requests.RequestException, ValueError):
+        return {'status': 'processing'}
+
+    print(f'[vocal] result {r.status_code}: {json.dumps(data, ensure_ascii=False)[:600]}')
+
+    if r.status_code >= 400:
+        return {'status': 'processing'}
+
+    status = ''
+    if isinstance(data, dict):
+        status = str(data.get('status') or data.get('state') or '').lower()
+
+    audio = extract_audio_url(data)
+    if audio:
+        return {'status': 'succeeded', 'audio': audio}
+
+    if status in ('failed', 'error', 'canceled'):
+        return {'status': 'failed', 'error': 'Движок не смог создать песню по этому запросу'}
+
+    return {'status': 'processing'}
 
 
 def hf_token() -> Optional[str]:
@@ -287,20 +345,20 @@ def handle_start(body: Dict[str, Any]) -> Dict[str, Any]:
                          'Снимите флажок «С текстом», чтобы создать инструментал.',
                 'needVocalEngine': True,
             })
-        audio = vocal_generate(text, str(body.get('style') or ''), text[:60])
-        if audio:
-            store_track(audio, meta, f'vocal-{int(time.time())}')
-            return respond(200, {
-                'id': f'vocal-{int(time.time())}',
-                'status': 'succeeded',
-                'audio': audio,
-                'engine': 'vocal',
-                'caption': source_note,
-                'prompt': text,
-                'imageUrl': image_url if image else None,
+        started = vocal_start(text, str(body.get('style') or ''), text[:60])
+        if started.get('error'):
+            print(f'[vocal] start failed: {started["error"]}')
+            return respond(502, {
+                'error': 'Движок с вокалом не принял запрос. Проверьте баланс и ключ доступа.'
             })
-        return respond(502, {
-            'error': 'Движок с вокалом не ответил. Попробуйте ещё раз через минуту.'
+
+        return respond(200, {
+            'id': f'vocal:{started["taskId"]}',
+            'status': 'processing',
+            'engine': 'vocal',
+            'caption': source_note,
+            'prompt': text,
+            'imageUrl': image_url if image else None,
         })
 
     audio = hf_generate_music(full_prompt, duration)
@@ -368,7 +426,27 @@ def store_track(audio: str, meta: Dict[str, Any], prediction_id: str) -> None:
 
 def handle_status(prediction_id: str, meta: Dict[str, Any]) -> Dict[str, Any]:
     """Отдаёт состояние генерации и ссылку на готовый трек."""
-    if prediction_id.startswith(('local-', 'hf-')):
+    if prediction_id.startswith('vocal:'):
+        task_id = prediction_id.split(':', 1)[1]
+        state = vocal_result(task_id)
+        if state['status'] == 'succeeded':
+            file = requests.get(state['audio'], timeout=180)
+            audio = upload_file('tracks', 'mp3', file.content, 'audio/mpeg')
+            store_track(audio, meta, prediction_id)
+            return respond(200, {
+                'id': prediction_id,
+                'status': 'succeeded',
+                'audio': audio,
+                'error': None,
+            })
+        return respond(200, {
+            'id': prediction_id,
+            'status': 'failed' if state['status'] == 'failed' else 'processing',
+            'audio': None,
+            'error': state.get('error'),
+        })
+
+    if prediction_id.startswith(('local-', 'hf-', 'vocal-')):
         return respond(200, {
             'id': prediction_id,
             'status': 'local',
