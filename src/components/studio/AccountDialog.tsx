@@ -29,18 +29,26 @@ const PLANS = [
     limits: ['Без редактирования трека', 'Только скачивание готового файла'],
   },
   {
-    id: 'author',
-    name: 'Автор',
-    price: '590 ₽',
-    note: '120 треков, коммерческая лицензия',
-    limits: [],
+    id: 'standard',
+    name: 'Стандарт',
+    price: '299 ₽',
+    note: '50 генераций в месяц',
+    limits: [
+      'Свободная лицензия на трек',
+      'Приоритетная генерация',
+      'Базовое редактирование трека',
+    ],
   },
   {
-    id: 'studio',
-    name: 'Студия',
-    price: '1 490 ₽',
-    note: 'Без лимита, приоритетная очередь',
-    limits: [],
+    id: 'premium',
+    name: 'Премиум',
+    price: '999 ₽',
+    note: '300 генераций в месяц',
+    limits: [
+      'Свободное редактирование в студии',
+      'Разделение вокала и минусовки',
+      'Инструмент разделения на дорожки',
+    ],
   },
 ];
 
@@ -55,7 +63,7 @@ const AccountDialog = ({
 }: Props) => {
   const [name, setName] = useState(userName);
   const [mail, setMail] = useState(email);
-  const [plan, setPlan] = useState('author');
+  const [plan, setPlan] = useState('standard');
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -183,7 +191,11 @@ const AccountDialog = ({
                         key={limit}
                         className="flex items-center gap-1.5 text-[0.8em] text-muted-foreground"
                       >
-                        <Icon name="Minus" size={12} className="flex-none" />
+                        <Icon
+                          name={p.id === 'free' ? 'Minus' : 'Check'}
+                          size={12}
+                          className="flex-none"
+                        />
                         {limit}
                       </span>
                     ))}

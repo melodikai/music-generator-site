@@ -7,6 +7,8 @@ import PromptPanel from '@/components/studio/PromptPanel';
 import Player from '@/components/studio/Player';
 import TrackFeed from '@/components/studio/TrackFeed';
 import AccountDialog from '@/components/studio/AccountDialog';
+import DawEditor from '@/components/studio/DawEditor';
+import StemSplitter from '@/components/studio/StemSplitter';
 import { checkGeneration, startGeneration } from '@/lib/api';
 
 const STAGE_IMAGE =
@@ -28,7 +30,7 @@ const Index = () => {
   const [menuOpen, setMenuOpen] = useState(false);
   const [accountOpen, setAccountOpen] = useState(false);
   const [profile, setProfile] = useState({ name: 'Анна Ковалёва', email: 'anna@zvuchi.ru' });
-  const [used, setUsed] = useState(34);
+  const [used, setUsed] = useState(12);
   const timer = useRef<number | null>(null);
 
   const activeTrack = useMemo(
@@ -147,7 +149,7 @@ const Index = () => {
         setMenuOpen(false);
       }}
       userName={profile.name}
-      credits={120}
+      credits={50}
       onClose={() => setMenuOpen(false)}
     />
   );
@@ -204,6 +206,10 @@ const Index = () => {
                 onGenerate={handleGenerate}
                 error={error}
               />
+            ) : section === 'studio' ? (
+              <DawEditor tracks={tracks} />
+            ) : section === 'stems' ? (
+              <StemSplitter tracks={tracks} />
             ) : (
               <section className="px-4 pt-10 text-center sm:px-8">
                 <h1 className="animate-rise font-display text-[30px] font-light leading-[1.08] tracking-[-0.03em] sm:text-[40px]">
@@ -229,22 +235,26 @@ const Index = () => {
               </section>
             )}
 
-            <Player
-              track={activeTrack}
-              playing={playing}
-              onToggle={() => setPlaying((p) => !p)}
-              onFavorite={handleFavorite}
-            />
+            {section !== 'studio' && section !== 'stems' && (
+              <>
+                <Player
+                  track={activeTrack}
+                  playing={playing}
+                  onToggle={() => setPlaying((p) => !p)}
+                  onFavorite={handleFavorite}
+                />
 
-            <TrackFeed
-              section={section}
-              tracks={tracks}
-              activeId={activeTrack?.id ?? null}
-              playing={playing}
-              onPlay={handlePlay}
-              onFavorite={handleFavorite}
-              onSection={handleSection}
-            />
+                <TrackFeed
+                  section={section}
+                  tracks={tracks}
+                  activeId={activeTrack?.id ?? null}
+                  playing={playing}
+                  onPlay={handlePlay}
+                  onFavorite={handleFavorite}
+                  onSection={handleSection}
+                />
+              </>
+            )}
           </div>
         </main>
       </div>
@@ -277,7 +287,7 @@ const Index = () => {
         onOpenChange={setAccountOpen}
         userName={profile.name}
         email={profile.email}
-        credits={120}
+        credits={50}
         used={used}
         onSave={(name, email) => setProfile({ name, email })}
       />

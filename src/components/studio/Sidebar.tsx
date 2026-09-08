@@ -2,11 +2,21 @@ import Icon from '@/components/ui/icon';
 import { cn } from '@/lib/utils';
 import { STYLES } from '@/lib/studio-data';
 
-export type SectionId = 'create' | 'tracks' | 'library' | 'favorites' | 'account' | 'history';
+export type SectionId =
+  | 'create'
+  | 'tracks'
+  | 'studio'
+  | 'stems'
+  | 'library'
+  | 'favorites'
+  | 'account'
+  | 'history';
 
 export const SECTIONS: { id: SectionId; label: string; icon: string }[] = [
   { id: 'create', label: 'Создать', icon: 'AudioLines' },
   { id: 'tracks', label: 'Мои треки', icon: 'Music' },
+  { id: 'studio', label: 'Студия', icon: 'SlidersHorizontal' },
+  { id: 'stems', label: 'Дорожки', icon: 'Split' },
   { id: 'library', label: 'Библиотека', icon: 'ListMusic' },
   { id: 'favorites', label: 'Избранное', icon: 'Star' },
   { id: 'history', label: 'История', icon: 'Clock' },

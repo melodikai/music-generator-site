@@ -22,6 +22,8 @@ const TITLES: Record<SectionId, string> = {
   favorites: 'Избранное',
   history: 'История генераций',
   account: 'Личный кабинет',
+  studio: 'Студия',
+  stems: 'Разделение на дорожки',
 };
 
 const TrackFeed = ({
