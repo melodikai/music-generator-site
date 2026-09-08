@@ -69,7 +69,7 @@ export type StartResult = {
   id: string;
   status: string;
   audio?: string | null;
-  engine?: 'huggingface' | 'replicate' | 'browser' | 'vocal';
+  engine?: 'huggingface' | 'browser' | 'vocal';
   caption?: string;
   prompt?: string;
   seconds?: number;

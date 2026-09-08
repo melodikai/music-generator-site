@@ -7,19 +7,25 @@ from typing import Any, Dict, Optional
 import requests
 
 import db
+import limits
 from storage import upload_file
-
-REPLICATE_API = 'https://api.replicate.com/v1'
-MUSIC_MODEL = os.environ.get('MUSIC_MODEL', 'stackadoc/stable-audio-open-1.0')
-CAPTION_MODEL = os.environ.get('CAPTION_MODEL', 'salesforce/blip')
 
 VOCAL_API_URL = os.environ.get('VOCAL_API_URL', 'https://gptunnel.ru/v1/media/create')
 VOCAL_RESULT_URL = os.environ.get('VOCAL_RESULT_URL', 'https://gptunnel.ru/v1/media/result')
 VOCAL_MODEL = os.environ.get('VOCAL_MODEL', 'suno')
 
-HF_API = 'https://api-inference.huggingface.co/models'
+HF_API = os.environ.get('HF_API', 'https://router.huggingface.co/hf-inference/models')
 HF_MUSIC_MODEL = os.environ.get('HF_MUSIC_MODEL', 'facebook/musicgen-small')
-HF_CAPTION_MODEL = os.environ.get('HF_CAPTION_MODEL', 'Salesforce/blip-image-captioning-base')
+HF_CAPTION_MODELS = [
+    m.strip()
+    for m in (
+        os.environ.get('HF_CAPTION_MODEL')
+        or 'Salesforce/blip-image-captioning-large,'
+           'Salesforce/blip-image-captioning-base,'
+           'nlpconnect/vit-gpt2-image-captioning'
+    ).split(',')
+    if m.strip()
+]
 
 CORS = {
     'Access-Control-Allow-Origin': '*',
@@ -39,48 +45,11 @@ def respond(status: int, payload: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 
-def token() -> Optional[str]:
-    return os.environ.get('REPLICATE_API_TOKEN')
-
-
-def headers() -> Dict[str, str]:
-    return {'Authorization': f'Token {token()}', 'Content-Type': 'application/json'}
-
-
-def latest_version(model: str) -> str:
-    r = requests.get(f'{REPLICATE_API}/models/{model}', headers=headers(), timeout=15)
-    if r.status_code >= 400:
-        raise provider_message(r.status_code, r.text)
-    return r.json()['latest_version']['id']
-
-
 class ProviderError(Exception):
     def __init__(self, message: str, status: int = 502):
         super().__init__(message)
         self.message = message
         self.status = status
-
-
-def provider_message(status_code: int, text: str) -> ProviderError:
-    if status_code == 402 or 'Insufficient credit' in text:
-        return ProviderError(
-            'На балансе сервиса генерации закончились средства. '
-            'Пополните счёт Replicate — после этого генерация заработает.',
-            402,
-        )
-    if status_code in (401, 403):
-        return ProviderError('Ключ доступа к сервису генерации недействителен.', 401)
-    if status_code == 429:
-        return ProviderError('Сервис генерации перегружен. Попробуйте через минуту.', 429)
-    return ProviderError('Сервис генерации временно недоступен. Попробуйте позже.', 502)
-
-
-def start_prediction(model: str, payload: Dict[str, Any]) -> Dict[str, Any]:
-    body = {'version': latest_version(model), 'input': payload}
-    r = requests.post(f'{REPLICATE_API}/predictions', headers=headers(), json=body, timeout=20)
-    if r.status_code >= 400:
-        raise provider_message(r.status_code, r.text)
-    return r.json()
 
 
 def upload_image(data_url: str) -> str:
@@ -92,24 +61,6 @@ def upload_image(data_url: str) -> str:
     elif 'image/webp' in data_url:
         ext = 'webp'
     return upload_file('images', ext, binary, f'image/{ext}')
-
-
-def describe_image(image_url: str) -> str:
-    started = start_prediction(CAPTION_MODEL, {'image': image_url, 'task': 'image_captioning'})
-    prediction_url = started['urls']['get']
-    for _ in range(24):
-        time.sleep(1)
-        r = requests.get(prediction_url, headers=headers(), timeout=15)
-        data = r.json()
-        if data['status'] == 'succeeded':
-            out = data.get('output')
-            if isinstance(out, list):
-                out = ' '.join(str(x) for x in out)
-            text = str(out or '').replace('Caption:', '').strip()
-            return text
-        if data['status'] in ('failed', 'canceled'):
-            return ''
-    return ''
 
 
 def vocal_token() -> Optional[str]:
@@ -288,25 +239,92 @@ def hf_generate_music(prompt: str, duration: int) -> Optional[str]:
 
 
 def hf_caption(image_url: str) -> str:
+    """Описывает фото словами через бесплатные модели Hugging Face."""
     tok = hf_token()
     if not tok:
         return ''
+
     try:
         img = requests.get(image_url, timeout=30).content
-        r = requests.post(
-            f'{HF_API}/{HF_CAPTION_MODEL}',
-            headers={'Authorization': f'Bearer {tok}'},
-            data=img,
-            timeout=120,
-        )
-        if r.status_code >= 400:
-            return ''
-        out = r.json()
-        if isinstance(out, list) and out:
-            return str(out[0].get('generated_text', '')).strip()
-    except (requests.RequestException, ValueError):
+    except requests.RequestException:
         return ''
+
+    for model in HF_CAPTION_MODELS:
+        try:
+            r = requests.post(
+                f'{HF_API}/{model}',
+                headers={'Authorization': f'Bearer {tok}'},
+                data=img,
+                timeout=90,
+            )
+            if r.status_code >= 400:
+                print(f'[caption] {model} -> {r.status_code}')
+                continue
+            out = r.json()
+            if isinstance(out, list) and out:
+                text = str(out[0].get('generated_text', '')).strip()
+                if text:
+                    return text
+        except (requests.RequestException, ValueError) as e:
+            print(f'[caption] {model} failed: {type(e).__name__}')
+            continue
+
     return ''
+
+
+MOOD_BY_LIGHT = [
+    (60, 'dark moody atmosphere, deep low tones, slow tempo'),
+    (110, 'dim evening atmosphere, warm mellow tones, unhurried tempo'),
+    (170, 'soft daylight atmosphere, gentle warm harmony, medium tempo'),
+    (255, 'bright airy atmosphere, light shimmering harmony, uplifting tempo'),
+]
+
+
+def image_mood_prompt(image_data_url: str) -> str:
+    """Собирает музыкальное описание по цветам фото — работает без внешних сервисов."""
+    try:
+        from io import BytesIO
+
+        from PIL import Image
+
+        raw = base64.b64decode(image_data_url.split(',', 1)[-1])
+        img = Image.open(BytesIO(raw)).convert('RGB')
+        img.thumbnail((64, 64))
+        pixels = list(img.getdata())
+    except Exception as e:
+        print(f'[mood] image read failed: {type(e).__name__}')
+        return ''
+
+    if not pixels:
+        return ''
+
+    count = len(pixels)
+    r_avg = sum(p[0] for p in pixels) / count
+    g_avg = sum(p[1] for p in pixels) / count
+    b_avg = sum(p[2] for p in pixels) / count
+    light = (r_avg + g_avg + b_avg) / 3
+
+    spread = sum(max(p) - min(p) for p in pixels) / count
+
+    parts = []
+    for edge, phrase in MOOD_BY_LIGHT:
+        if light <= edge:
+            parts.append(phrase)
+            break
+
+    if r_avg > b_avg + 18:
+        parts.append('warm golden colours, analog warmth, tape saturation')
+    elif b_avg > r_avg + 18:
+        parts.append('cool blue colours, airy reverb, spacious pads')
+    else:
+        parts.append('neutral natural colours, balanced acoustic timbre')
+
+    if spread < 26:
+        parts.append('calm minimal arrangement, few instruments, ambient texture')
+    elif spread > 78:
+        parts.append('rich vivid arrangement, expressive layered instruments')
+
+    return ', '.join(parts)
 
 
 def build_prompt(text: str, style: str, mood: str, vocal: bool) -> str:
@@ -326,33 +344,59 @@ def handle_start(body: Dict[str, Any]) -> Dict[str, Any]:
     image = body.get('image') or ''
     source_note = ''
     image_url = None
+    photo_mood = ''
+
+    db.ensure_schema()
+    email = str(body.get('email') or '').strip().lower()
+    device_id = str(body.get('deviceId') or '').strip()[:64]
+    wants_vocal = bool(body.get('vocal'))
+
+    verdict = limits.check_allowed(email, device_id, wants_vocal)
+    if not verdict['ok']:
+        return respond(403, {
+            'error': verdict['error'],
+            'code': verdict['code'],
+            'usage': limits.usage_snapshot(email, device_id),
+        })
+
+    plan_cfg = limits.plan_config(verdict['plan'])
 
     if image:
         image_url = upload_image(image)
         caption = hf_caption(image_url)
-        if not caption and token():
-            caption = describe_image(image_url)
+        photo_mood = image_mood_prompt(image)
+
         if caption:
             source_note = caption
             text = f'{caption}. {text}'.strip() if text else caption
+        elif photo_mood:
+            source_note = 'Настроение считано по цветам и свету снимка'
+            if not text:
+                text = 'music inspired by this photograph'
         elif not text:
-            return respond(400, {'error': 'Не удалось прочитать изображение, добавьте описание словами'})
+            return respond(400, {
+                'error': 'Не удалось прочитать изображение, добавьте описание словами'
+            })
 
     if len(text) < 4 and not str(body.get('lyrics') or '').strip():
         return respond(400, {'error': 'Опишите музыку подробнее'})
 
     duration = int(body.get('duration') or 47)
-    duration = max(10, min(47, duration))
+    duration = max(10, min(plan_cfg['maxSeconds'], duration))
 
     full_prompt = build_prompt(
         text,
         str(body.get('style') or ''),
         str(body.get('mood') or ''),
-        bool(body.get('vocal')),
+        wants_vocal,
     )
 
+    if photo_mood:
+        full_prompt = f'{full_prompt}, {photo_mood}'
+
     meta = {
-        'email': str(body.get('email') or ''),
+        'email': email,
+        'deviceId': device_id,
         'title': str(body.get('title') or ''),
         'prompt': text,
         'style': str(body.get('style') or ''),
@@ -361,8 +405,6 @@ def handle_start(body: Dict[str, Any]) -> Dict[str, Any]:
         'seconds': duration,
     }
 
-    wants_vocal = bool(body.get('vocal'))
-
     if wants_vocal:
         if not vocal_token():
             return respond(503, {
@@ -370,12 +412,16 @@ def handle_start(body: Dict[str, Any]) -> Dict[str, Any]:
                          'Снимите флажок «С текстом», чтобы создать инструментал.',
                 'needVocalEngine': True,
             })
+        vocal_seconds = limits.vocal_duration(duration)
+        meta['seconds'] = vocal_seconds
+
         started = vocal_start(
             text,
             str(body.get('style') or ''),
             text[:60] or 'Песня',
             str(body.get('voice') or 'any'),
             str(body.get('lyrics') or '').strip(),
+            vocal_seconds,
         )
         if started.get('error'):
             print(f'[vocal] start failed: {started["error"]}')
@@ -383,18 +429,23 @@ def handle_start(body: Dict[str, Any]) -> Dict[str, Any]:
                 'error': 'Движок с вокалом не принял запрос. Проверьте баланс и ключ доступа.'
             })
 
+        limits.log_generation(email, device_id, 'vocal', 'suno', vocal_seconds)
+
         return respond(200, {
             'id': f'vocal:{started["taskId"]}',
             'status': 'processing',
             'engine': 'vocal',
             'caption': source_note,
             'prompt': text,
+            'seconds': vocal_seconds,
             'imageUrl': image_url if image else None,
+            'usage': limits.usage_snapshot(email, device_id),
         })
 
     audio = hf_generate_music(full_prompt, duration)
     if audio:
         store_track(audio, meta, 'hf')
+        limits.log_generation(email, device_id, 'free', 'huggingface', duration)
         return respond(200, {
             'id': f'hf-{int(time.time())}',
             'status': 'succeeded',
@@ -402,29 +453,12 @@ def handle_start(body: Dict[str, Any]) -> Dict[str, Any]:
             'engine': 'huggingface',
             'caption': source_note,
             'prompt': text,
+            'seconds': duration,
             'imageUrl': image_url if image else None,
+            'usage': limits.usage_snapshot(email, device_id),
         })
 
-    if token():
-        try:
-            prediction = start_prediction(
-                MUSIC_MODEL,
-                {
-                    'prompt': full_prompt,
-                    'seconds_total': duration,
-                    'steps': int(body.get('steps') or 100),
-                },
-            )
-            return respond(200, {
-                'id': prediction['id'],
-                'status': prediction['status'],
-                'engine': 'replicate',
-                'caption': source_note,
-                'prompt': text,
-                'imageUrl': image_url if image else None,
-            })
-        except ProviderError:
-            pass
+    limits.log_generation(email, device_id, 'free', 'browser', duration)
 
     return respond(200, {
         'id': f'local-{int(time.time())}',
@@ -433,7 +467,9 @@ def handle_start(body: Dict[str, Any]) -> Dict[str, Any]:
         'audio': None,
         'caption': source_note,
         'prompt': full_prompt,
+        'seconds': duration,
         'imageUrl': image_url if image else None,
+        'usage': limits.usage_snapshot(email, device_id),
     })
 
 
@@ -477,50 +513,11 @@ def handle_status(prediction_id: str, meta: Dict[str, Any]) -> Dict[str, Any]:
             'error': state.get('error'),
         })
 
-    if prediction_id.startswith(('local-', 'hf-', 'vocal-')):
-        return respond(200, {
-            'id': prediction_id,
-            'status': 'local',
-            'audio': None,
-            'error': None,
-        })
-
-    if not token():
-        return respond(200, {
-            'id': prediction_id,
-            'status': 'local',
-            'audio': None,
-            'error': None,
-        })
-
-    r = requests.get(f'{REPLICATE_API}/predictions/{prediction_id}', headers=headers(), timeout=15)
-    if r.status_code >= 400:
-        return respond(200, {
-            'id': prediction_id,
-            'status': 'local',
-            'audio': None,
-            'error': None,
-        })
-    data = r.json()
-    status = data.get('status')
-    audio = None
-
-    if status == 'succeeded':
-        out = data.get('output')
-        if isinstance(out, list):
-            out = out[0] if out else None
-        if isinstance(out, dict):
-            out = out.get('audio') or out.get('url')
-        if out:
-            file = requests.get(str(out), timeout=60)
-            audio = upload_file('tracks', 'wav', file.content, 'audio/wav')
-            store_track(audio, meta, prediction_id)
-
     return respond(200, {
         'id': prediction_id,
-        'status': status,
-        'audio': audio,
-        'error': data.get('error'),
+        'status': 'local',
+        'audio': None,
+        'error': None,
     })
 
 
