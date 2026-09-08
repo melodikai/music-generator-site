@@ -3,6 +3,7 @@ import Icon from '@/components/ui/icon';
 import { cn } from '@/lib/utils';
 import { MOODS, PROMPT_IDEAS, STYLES, TYPING_PLACEHOLDER } from '@/lib/studio-data';
 import PhotoDrop from '@/components/studio/PhotoDrop';
+import type { Usage } from '@/lib/api';
 
 type Props = {
   value: string;
@@ -25,6 +26,8 @@ type Props = {
   progress: number;
   onGenerate: () => void;
   error: string | null;
+  usage: Usage;
+  onRequestAuth: () => void;
 };
 
 const VOICES = [
@@ -75,7 +78,10 @@ const PromptPanel = ({
   progress,
   onGenerate,
   error,
+  usage,
+  onRequestAuth,
 }: Props) => {
+  const vocalAllowed = usage.vocalLimit > 0;
   const [focused, setFocused] = useState(false);
   const [open, setOpen] = useState(false);
   const [photoOpen, setPhotoOpen] = useState(false);
@@ -307,25 +313,37 @@ const PromptPanel = ({
                 ))}
               </div>
             </div>
-            <label className="flex cursor-pointer items-center justify-between gap-3 text-[0.9em] text-foreground/80">
-              Добавить вокал
-              <span
-                onClick={() => onVocal(!withVocal)}
-                className={cn(
-                  'relative h-6 w-11 flex-none rounded-full transition-colors',
-                  withVocal ? 'bg-primary' : 'bg-white/15',
-                )}
-              >
+            <div>
+              <label className="flex cursor-pointer items-center justify-between gap-3 text-[0.9em] text-foreground/80">
+                Добавить вокал
                 <span
+                  onClick={() => (vocalAllowed ? onVocal(!withVocal) : onRequestAuth())}
                   className={cn(
-                    'absolute top-0.5 h-5 w-5 rounded-full bg-background transition-all',
-                    withVocal ? 'left-[22px]' : 'left-0.5',
+                    'relative h-6 w-11 flex-none rounded-full transition-colors',
+                    withVocal && vocalAllowed ? 'bg-primary' : 'bg-white/15',
+                    !vocalAllowed && 'opacity-50',
                   )}
-                />
-              </span>
-            </label>
+                >
+                  <span
+                    className={cn(
+                      'absolute top-0.5 h-5 w-5 rounded-full bg-background transition-all',
+                      withVocal && vocalAllowed ? 'left-[22px]' : 'left-0.5',
+                    )}
+                  />
+                </span>
+              </label>
+              {!vocalAllowed && (
+                <button
+                  type="button"
+                  onClick={onRequestAuth}
+                  className="mt-1.5 text-left text-[0.8em] text-foreground/50 underline-offset-2 hover:text-foreground/80 hover:underline"
+                >
+                  Песни со словами — после бесплатной регистрации
+                </button>
+              )}
+            </div>
 
-            {withVocal && (
+            {withVocal && vocalAllowed && (
               <div>
                 <p className="mb-2 text-[0.72em] uppercase tracking-[0.14em] text-foreground/50">
                   Голос
@@ -387,11 +405,20 @@ const PromptPanel = ({
           </div>
         ) : (
           !error && (
-            <p className="mt-3 text-[0.85em] text-foreground/45">
-              {image
-                ? 'Фото готово — нажмите стрелку, чтобы собрать трек'
-                : 'Опишите настроение, инструменты и темп'}
-            </p>
+            <div className="mt-3">
+              <p className="text-[0.85em] text-foreground/45">
+                {image
+                  ? 'Фото готово — нажмите стрелку, чтобы собрать трек'
+                  : 'Опишите настроение, инструменты и темп'}
+              </p>
+              <p className="mt-1.5 text-[0.78em] text-foreground/35">
+                {withVocal && vocalAllowed
+                  ? `Песни со словами: ${usage.vocalLeft} из ${usage.vocalLimit} в этом месяце`
+                  : usage.freeLimit < 0
+                    ? 'Треки без слов — без ограничений'
+                    : `Осталось сегодня: ${usage.freeLeft} из ${usage.freeLimit}`}
+              </p>
+            </div>
           )
         )}
       </form>

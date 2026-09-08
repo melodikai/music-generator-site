@@ -11,6 +11,7 @@ import DawEditor from '@/components/studio/DawEditor';
 import StemSplitter from '@/components/studio/StemSplitter';
 import AuthDialog from '@/components/studio/AuthDialog';
 import SiteFooter from '@/components/studio/SiteFooter';
+import LockedSection from '@/components/studio/LockedSection';
 import {
   checkGeneration,
   fetchMe,
@@ -19,7 +20,11 @@ import {
   saveProfile,
   startGeneration,
   saveLocalTrack,
+  fetchUsage,
+  GUEST_USAGE,
+  LimitError,
   type AuthUser,
+  type Usage,
 } from '@/lib/api';
 import { blobToDataUrl, generateLocalTrack } from '@/lib/local-music';
 
@@ -47,7 +52,7 @@ const Index = () => {
   const [authOpen, setAuthOpen] = useState(false);
   const [user, setUser] = useState<AuthUser | null>(null);
   const [profile, setProfile] = useState({ name: 'Гость', email: '' });
-  const [used, setUsed] = useState(0);
+  const [usage, setUsage] = useState<Usage>(GUEST_USAGE);
   const timer = useRef<number | null>(null);
 
   const activeTrack = useMemo(
@@ -68,10 +73,13 @@ const Index = () => {
         if (!me) return;
         setUser(me);
         setProfile({ name: me.name, email: me.email });
-        setUsed(me.used);
       })
       .catch(() => undefined);
   }, []);
+
+  useEffect(() => {
+    fetchUsage(profile.email).then(setUsage).catch(() => undefined);
+  }, [profile.email]);
 
   useEffect(() => {
     if (!profile.email) return undefined;
@@ -130,12 +138,18 @@ const Index = () => {
         voice,
         lyrics: lyrics.trim(),
         image,
+        email: profile.email,
+        duration: usage.maxSeconds,
       });
+
+      if (started.usage) setUsage(started.usage);
 
       let audio: string | null = started.audio || null;
       const localMode =
         started.engine !== 'vocal' &&
         (started.status === 'local' || started.engine === 'browser');
+
+      const seconds = Math.min(started.seconds || usage.maxSeconds, usage.maxSeconds);
 
       if (!audio && localMode) {
         setProgress(55);
@@ -144,20 +158,22 @@ const Index = () => {
           style,
           mood,
           vocal: withVocal,
-          seconds: 40,
+          seconds,
         });
         setProgress(80);
         const dataUrl = await blobToDataUrl(blob);
-        const stored = await saveLocalTrack({
-          audio: dataUrl,
-          email: profile.email,
-          title: text.slice(0, 40),
-          prompt: text,
-          style,
-          mood,
-          imageUrl: started.imageUrl,
-          seconds: 40,
-        }).catch(() => null);
+        const stored = profile.email
+          ? await saveLocalTrack({
+              audio: dataUrl,
+              email: profile.email,
+              title: text.slice(0, 40),
+              prompt: text,
+              style,
+              mood,
+              imageUrl: started.imageUrl,
+              seconds,
+            }).catch(() => null)
+          : null;
         audio = stored || URL.createObjectURL(blob);
       }
 
@@ -170,7 +186,7 @@ const Index = () => {
           prompt: started.prompt || text,
           style,
           mood,
-          seconds: '47',
+          seconds: String(seconds),
           ...(started.imageUrl ? { imageUrl: started.imageUrl } : {}),
         });
         if (state.status === 'succeeded') {
@@ -188,7 +204,7 @@ const Index = () => {
       setProgress(100);
       const fresh = makeTrack(started.prompt || text, style, tracks.length, {
         audio,
-        seconds: 47,
+        seconds,
         fromPhoto: Boolean(image),
       });
       setTracks((prev) => [fresh, ...prev]);
@@ -196,11 +212,17 @@ const Index = () => {
       setPlaying(true);
       setPrompt('');
       setImage(null);
-      setUsed((u) => u + 1);
       setSection('create');
+      fetchUsage(profile.email).then(setUsage).catch(() => undefined);
     } catch (e) {
       stop();
-      setError(e instanceof Error ? e.message : 'Не удалось создать трек');
+      if (e instanceof LimitError) {
+        if (e.usage) setUsage(e.usage);
+        setError(e.message);
+        if (e.code === 'need_auth') setAuthOpen(true);
+      } else {
+        setError(e instanceof Error ? e.message : 'Не удалось создать трек');
+      }
     } finally {
       stop();
       setGenerating(false);
@@ -233,7 +255,7 @@ const Index = () => {
     await logout();
     setUser(null);
     setProfile({ name: 'Гость', email: '' });
-    setUsed(0);
+    setUsage(GUEST_USAGE);
     setAccountOpen(false);
   };
 
@@ -340,11 +362,29 @@ const Index = () => {
                 progress={Math.min(100, progress)}
                 onGenerate={handleGenerate}
                 error={error}
+                usage={usage}
+                onRequestAuth={() => setAuthOpen(true)}
               />
             ) : section === 'studio' ? (
-              <DawEditor tracks={tracks} />
+              usage.canStudio ? (
+                <DawEditor tracks={tracks} />
+              ) : (
+                <LockedSection
+                  title="Студия — после регистрации"
+                  description="Разложите трек на дорожки, сведите заново и выгрузите каждую партию отдельно. Бесплатный аккаунт открывает студию полностью."
+                  onRequestAuth={() => setAuthOpen(true)}
+                />
+              )
             ) : section === 'stems' ? (
-              <StemSplitter tracks={tracks} />
+              usage.canStudio ? (
+                <StemSplitter tracks={tracks} />
+              ) : (
+                <LockedSection
+                  title="Разделение на дорожки — после регистрации"
+                  description="Вытащите из трека вокал, минусовку, бас и ударные отдельными файлами. Достаточно бесплатного аккаунта."
+                  onRequestAuth={() => setAuthOpen(true)}
+                />
+              )
             ) : (
               <section className="px-4 pt-10 text-center sm:px-8">
                 <h1 className="animate-rise font-display text-[30px] font-light leading-[1.08] tracking-[-0.03em] sm:text-[40px]">
@@ -377,6 +417,8 @@ const Index = () => {
                   playing={playing}
                   onToggle={() => setPlaying((p) => !p)}
                   onFavorite={handleFavorite}
+                  canDownload={usage.canDownload}
+                  onRequestAuth={() => setAuthOpen(true)}
                 />
 
                 <TrackFeed
@@ -424,8 +466,7 @@ const Index = () => {
         onOpenChange={setAccountOpen}
         userName={profile.name}
         email={profile.email}
-        credits={user?.isAdmin ? 999999 : 50}
-        used={used}
+        usage={usage}
         onSave={(name, email) => {
           setProfile({ name, email });
           saveProfile(email, name, 'standard').catch(() => undefined);
@@ -439,7 +480,6 @@ const Index = () => {
         onAuth={(me) => {
           setUser(me);
           setProfile({ name: me.name, email: me.email });
-          setUsed(me.used);
         }}
       />
     </div>

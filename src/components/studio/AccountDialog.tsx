@@ -9,14 +9,14 @@ import {
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import Icon from '@/components/ui/icon';
 import { cn } from '@/lib/utils';
+import type { Usage } from '@/lib/api';
 
 type Props = {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   userName: string;
   email: string;
-  credits: number;
-  used: number;
+  usage: Usage;
   onSave: (name: string, email: string) => void;
   onLogout?: () => void;
 };
@@ -26,29 +26,33 @@ const PLANS = [
     id: 'free',
     name: 'Бесплатный',
     price: '0 ₽',
-    note: '10 треков в месяц · длина до 1 минуты',
-    limits: ['Без редактирования трека', 'Только скачивание готового файла'],
+    note: '3 песни со словами в месяц · 5 треков в день',
+    limits: [
+      'Длина трека до 3:30',
+      'Скачивание и публикация',
+      'Студия и разделение на дорожки',
+    ],
   },
   {
     id: 'standard',
     name: 'Стандарт',
     price: '299 ₽',
-    note: '50 генераций в месяц',
+    note: '10 песен со словами в месяц · 10 треков в день',
     limits: [
       'Свободная лицензия на трек',
       'Приоритетная генерация',
-      'Базовое редактирование трека',
+      'Все инструменты студии',
     ],
   },
   {
     id: 'premium',
     name: 'Премиум',
     price: '999 ₽',
-    note: '300 генераций в месяц',
+    note: '30 песен со словами в месяц · треки без слов без ограничений',
     limits: [
-      'Свободное редактирование в студии',
-      'Разделение вокала и минусовки',
-      'Инструмент разделения на дорожки',
+      'Безлимитная генерация без слов',
+      'Высшее качество движка',
+      'Все инструменты студии',
     ],
   },
 ];
@@ -58,14 +62,15 @@ const AccountDialog = ({
   onOpenChange,
   userName,
   email,
-  credits,
-  used,
+  usage,
   onSave,
   onLogout,
 }: Props) => {
   const [name, setName] = useState(userName);
   const [mail, setMail] = useState(email);
-  const [plan, setPlan] = useState('standard');
+  const [plan, setPlan] = useState<string>(
+    usage.plan === 'guest' ? 'free' : usage.plan,
+  );
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -148,19 +153,43 @@ const AccountDialog = ({
           <TabsContent value="limits" className="space-y-3 pt-4">
             <div className="rounded-2xl border border-border bg-secondary p-4">
               <div className="flex items-baseline justify-between">
-                <span className="text-[0.9em] text-foreground">Использовано в этом месяце</span>
+                <span className="text-[0.9em] text-foreground">Песни со словами · месяц</span>
                 <span className="font-display text-lg">
-                  {used} / {credits}
+                  {usage.vocalUsed} / {usage.vocalLimit}
                 </span>
               </div>
               <div className="mt-3 h-[5px] w-full overflow-hidden rounded-full bg-white/10">
                 <div
                   className="h-full rounded-full bg-primary"
-                  style={{ width: `${Math.min(100, (used / credits) * 100)}%` }}
+                  style={{
+                    width: `${usage.vocalLimit ? Math.min(100, (usage.vocalUsed / usage.vocalLimit) * 100) : 0}%`,
+                  }}
                 />
               </div>
               <p className="mt-3 text-[0.85em] text-muted-foreground">
-                Лимит обновится 1 октября. Неизрасходованные генерации не переносятся.
+                Обновляется первого числа. Неизрасходованные не переносятся.
+              </p>
+            </div>
+
+            <div className="rounded-2xl border border-border bg-secondary p-4">
+              <div className="flex items-baseline justify-between">
+                <span className="text-[0.9em] text-foreground">Треки без слов · сегодня</span>
+                <span className="font-display text-lg">
+                  {usage.freeLimit < 0 ? 'Без лимита' : `${usage.freeUsed} / ${usage.freeLimit}`}
+                </span>
+              </div>
+              {usage.freeLimit >= 0 && (
+                <div className="mt-3 h-[5px] w-full overflow-hidden rounded-full bg-white/10">
+                  <div
+                    className="h-full rounded-full bg-primary"
+                    style={{
+                      width: `${Math.min(100, (usage.freeUsed / usage.freeLimit) * 100)}%`,
+                    }}
+                  />
+                </div>
+              )}
+              <p className="mt-3 text-[0.85em] text-muted-foreground">
+                Счётчик обнуляется каждый день. Тариф — «{usage.planTitle}».
               </p>
             </div>
             <div className="rounded-2xl border border-border bg-secondary p-4">

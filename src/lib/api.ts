@@ -3,6 +3,68 @@ import func2url from '../../backend/func2url.json';
 const MUSIC_URL = (func2url as Record<string, string>).music;
 const AUTH_URL = (func2url as Record<string, string>).auth;
 
+export type Usage = {
+  plan: 'guest' | 'free' | 'standard' | 'premium';
+  planTitle: string;
+  vocalLimit: number;
+  vocalUsed: number;
+  vocalLeft: number;
+  freeLimit: number;
+  freeUsed: number;
+  freeLeft: number;
+  maxSeconds: number;
+  canDownload: boolean;
+  canPublish: boolean;
+  canStudio: boolean;
+};
+
+export const GUEST_USAGE: Usage = {
+  plan: 'guest',
+  planTitle: 'Без регистрации',
+  vocalLimit: 0,
+  vocalUsed: 0,
+  vocalLeft: 0,
+  freeLimit: 3,
+  freeUsed: 0,
+  freeLeft: 3,
+  maxSeconds: 60,
+  canDownload: false,
+  canPublish: false,
+  canStudio: false,
+};
+
+export const deviceId = (): string => {
+  const key = 'zvuchi-device';
+  let id = localStorage.getItem(key);
+  if (!id) {
+    id = `d${Math.random().toString(36).slice(2)}${Date.now().toString(36)}`;
+    localStorage.setItem(key, id);
+  }
+  return id;
+};
+
+export class LimitError extends Error {
+  code: string;
+  usage?: Usage;
+
+  constructor(message: string, code: string, usage?: Usage) {
+    super(message);
+    this.code = code;
+    this.usage = usage;
+  }
+}
+
+export const fetchUsage = async (email = ''): Promise<Usage> => {
+  const query = new URLSearchParams({ list: 'usage', email, deviceId: deviceId() });
+  try {
+    const res = await fetch(`${MUSIC_URL}?${query}`);
+    if (!res.ok) return GUEST_USAGE;
+    return await res.json();
+  } catch {
+    return GUEST_USAGE;
+  }
+};
+
 export type StartResult = {
   id: string;
   status: string;
@@ -10,7 +72,9 @@ export type StartResult = {
   engine?: 'huggingface' | 'replicate' | 'browser' | 'vocal';
   caption?: string;
   prompt?: string;
+  seconds?: number;
   imageUrl?: string | null;
+  usage?: Usage;
 };
 
 export type StatusResult = {
@@ -29,8 +93,9 @@ export const startGeneration = async (payload: {
   lyrics?: string;
   image?: string | null;
   duration?: number;
+  email?: string;
 }): Promise<StartResult> => {
-  const body = JSON.stringify(payload);
+  const body = JSON.stringify({ ...payload, deviceId: deviceId() });
 
   if (body.length > 1_800_000) {
     throw new Error('Фото слишком большое — выберите файл поменьше');
@@ -52,6 +117,11 @@ export const startGeneration = async (payload: {
   }
 
   const data = await res.json().catch(() => ({}));
+
+  if (res.status === 403 && data.code) {
+    throw new LimitError(data.error || 'Лимит исчерпан', data.code, data.usage);
+  }
+
   if (!res.ok) throw new Error(data.error || 'Не удалось запустить генерацию');
   return data;
 };

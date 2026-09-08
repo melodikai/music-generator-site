@@ -8,6 +8,8 @@ type Props = {
   playing: boolean;
   onToggle: () => void;
   onFavorite: (id: string) => void;
+  canDownload?: boolean;
+  onRequestAuth?: () => void;
 };
 
 const toSeconds = (value: string) => {
@@ -18,7 +20,14 @@ const toSeconds = (value: string) => {
 const fromSeconds = (value: number) =>
   `${Math.floor(value / 60)}:${String(Math.floor(value % 60)).padStart(2, '0')}`;
 
-const Player = ({ track, playing, onToggle, onFavorite }: Props) => {
+const Player = ({
+  track,
+  playing,
+  onToggle,
+  onFavorite,
+  canDownload = true,
+  onRequestAuth,
+}: Props) => {
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const [position, setPosition] = useState(0);
   const [realDuration, setRealDuration] = useState(0);
@@ -55,6 +64,10 @@ const Player = ({ track, playing, onToggle, onFavorite }: Props) => {
   };
 
   const download = () => {
+    if (!canDownload) {
+      onRequestAuth?.();
+      return;
+    }
     if (!track.audio) return;
     const a = document.createElement('a');
     a.href = track.audio;
@@ -131,10 +144,11 @@ const Player = ({ track, playing, onToggle, onFavorite }: Props) => {
             type="button"
             onClick={download}
             disabled={!hasAudio}
-            aria-label="Скачать трек"
+            aria-label={canDownload ? 'Скачать трек' : 'Скачивание после регистрации'}
+            title={canDownload ? 'Скачать трек' : 'Скачивание после регистрации'}
             className="hidden h-8 w-8 place-items-center rounded-full text-card-muted transition-colors hover:bg-black/5 hover:text-card-foreground disabled:opacity-40 sm:grid"
           >
-            <Icon name="Download" size={15} />
+            <Icon name={canDownload ? 'Download' : 'Lock'} size={15} />
           </button>
         </div>
       </div>
