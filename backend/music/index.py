@@ -571,6 +571,13 @@ def handler(event: Dict[str, Any], context) -> Dict[str, Any]:
             db.ensure_schema()
             return respond(200, {'tracks': db.showcase_tracks(12)})
 
+        if params.get('list') == 'usage':
+            db.ensure_schema()
+            return respond(200, limits.usage_snapshot(
+                str(params.get('email') or '').strip().lower(),
+                str(params.get('deviceId') or '').strip()[:64],
+            ))
+
         prediction_id = params.get('id')
         if not prediction_id:
             return respond(400, {'error': 'Не указан идентификатор генерации'})

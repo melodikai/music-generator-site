@@ -13,6 +13,14 @@
       "expectedStatus": 400,
       "expectedBody": {"error": "string"},
       "bodyMatcher": "partial"
+    },
+    {
+      "name": "Лимиты гостя",
+      "method": "GET",
+      "path": "/?list=usage&deviceId=test-device-limits",
+      "expectedStatus": 200,
+      "expectedBody": {"plan": "guest", "vocalLimit": 0, "canDownload": false},
+      "bodyMatcher": "partial"
     }
   ]
 }

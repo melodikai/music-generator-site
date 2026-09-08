@@ -480,6 +480,9 @@ const Index = () => {
         onAuth={(me) => {
           setUser(me);
           setProfile({ name: me.name, email: me.email });
+          setAuthOpen(false);
+          setError(null);
+          fetchUsage(me.email).then(setUsage).catch(() => undefined);
         }}
       />
     </div>
