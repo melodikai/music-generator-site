@@ -92,9 +92,9 @@ export const generateLocalTrack = async (params: Params): Promise<Blob> => {
   const scale = SCALES[preset.scale];
   const shift = MOOD_SHIFT[params.mood] ?? 0;
 
-  const rate = 44100;
-  const duration = Math.max(20, Math.min(60, params.seconds || 40));
-  const ctx = new OfflineAudioContext(2, rate * duration, rate);
+  const rate = 32000;
+  const duration = Math.max(20, Math.min(40, params.seconds || 32));
+  const ctx = new OfflineAudioContext(1, rate * duration, rate);
 
   const master = ctx.createGain();
   master.gain.value = 0.85;
@@ -104,13 +104,11 @@ export const generateLocalTrack = async (params: Params): Promise<Blob> => {
   master.connect(comp).connect(ctx.destination);
 
   const reverb = ctx.createConvolver();
-  const irLen = rate * 1.8;
-  const ir = ctx.createBuffer(2, irLen, rate);
-  for (let c = 0; c < 2; c += 1) {
-    const ch = ir.getChannelData(c);
-    for (let i = 0; i < irLen; i += 1) {
-      ch[i] = (Math.random() * 2 - 1) * (1 - i / irLen) ** 2.6;
-    }
+  const irLen = Math.floor(rate * 1.5);
+  const ir = ctx.createBuffer(1, irLen, rate);
+  const irCh = ir.getChannelData(0);
+  for (let i = 0; i < irLen; i += 1) {
+    irCh[i] = (Math.random() * 2 - 1) * (1 - i / irLen) ** 2.6;
   }
   reverb.buffer = ir;
   const wet = ctx.createGain();
@@ -161,7 +159,7 @@ export const generateLocalTrack = async (params: Params): Promise<Blob> => {
 
   const hat = (start: number) => {
     const len = 0.05;
-    const buf = ctx.createBuffer(1, rate * len, rate);
+    const buf = ctx.createBuffer(1, Math.floor(rate * len), rate);
     const ch = buf.getChannelData(0);
     for (let i = 0; i < ch.length; i += 1) ch[i] = (Math.random() * 2 - 1) * (1 - i / ch.length);
     const src = ctx.createBufferSource();

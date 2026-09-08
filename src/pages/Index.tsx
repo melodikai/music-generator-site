@@ -128,9 +128,10 @@ const Index = () => {
       });
 
       let audio: string | null = started.audio || null;
+      const localMode = started.status === 'local' || started.engine === 'browser';
 
-      if (started.status === 'local') {
-        setProgress(60);
+      if (!audio && localMode) {
+        setProgress(55);
         const blob = await generateLocalTrack({
           prompt: started.prompt || text,
           style,
@@ -138,21 +139,22 @@ const Index = () => {
           vocal: withVocal,
           seconds: 40,
         });
+        setProgress(80);
         const dataUrl = await blobToDataUrl(blob);
-        audio =
-          (await saveLocalTrack({
-            audio: dataUrl,
-            email: profile.email,
-            title: text.slice(0, 40),
-            prompt: text,
-            style,
-            mood,
-            imageUrl: started.imageUrl,
-            seconds: 40,
-          })) || URL.createObjectURL(blob);
+        const stored = await saveLocalTrack({
+          audio: dataUrl,
+          email: profile.email,
+          title: text.slice(0, 40),
+          prompt: text,
+          style,
+          mood,
+          imageUrl: started.imageUrl,
+          seconds: 40,
+        }).catch(() => null);
+        audio = stored || URL.createObjectURL(blob);
       }
 
-      for (let i = 0; !audio && i < 90; i += 1) {
+      for (let i = 0; !audio && !localMode && i < 90; i += 1) {
         await new Promise((r) => window.setTimeout(r, 3000));
         const state = await checkGeneration(started.id, {
           email: profile.email,

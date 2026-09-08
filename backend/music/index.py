@@ -283,9 +283,30 @@ def store_track(audio: str, meta: Dict[str, Any], prediction_id: str) -> None:
 
 def handle_status(prediction_id: str, meta: Dict[str, Any]) -> Dict[str, Any]:
     """Отдаёт состояние генерации и ссылку на готовый трек."""
+    if prediction_id.startswith(('local-', 'hf-')):
+        return respond(200, {
+            'id': prediction_id,
+            'status': 'local',
+            'audio': None,
+            'error': None,
+        })
+
+    if not token():
+        return respond(200, {
+            'id': prediction_id,
+            'status': 'local',
+            'audio': None,
+            'error': None,
+        })
+
     r = requests.get(f'{REPLICATE_API}/predictions/{prediction_id}', headers=headers(), timeout=15)
     if r.status_code >= 400:
-        return respond(404, {'error': 'Генерация не найдена'})
+        return respond(200, {
+            'id': prediction_id,
+            'status': 'local',
+            'audio': None,
+            'error': None,
+        })
     data = r.json()
     status = data.get('status')
     audio = None
@@ -330,8 +351,6 @@ def handler(event: Dict[str, Any], context) -> Dict[str, Any]:
         prediction_id = params.get('id')
         if not prediction_id:
             return respond(400, {'error': 'Не указан идентификатор генерации'})
-        if not token():
-            return respond(503, {'error': 'Генерация временно недоступна: не настроен доступ к движку'})
         try:
             return handle_status(prediction_id, {
                 'email': params.get('email') or '',
