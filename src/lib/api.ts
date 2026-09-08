@@ -26,6 +26,8 @@ export const startGeneration = async (payload: {
   style?: string;
   mood?: string;
   vocal?: boolean;
+  voice?: string;
+  lyrics?: string;
   image?: string | null;
   duration?: number;
 }): Promise<StartResult> => {

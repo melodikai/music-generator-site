@@ -139,20 +139,45 @@ def extract_audio_url(data: Any) -> Optional[str]:
     return None
 
 
-def vocal_start(prompt: str, style: str, title: str) -> Dict[str, Any]:
+VOICE_HINT = {
+    'male': 'male vocalist, male lead vocals',
+    'female': 'female vocalist, female lead vocals',
+    'duet': 'male and female duet vocals',
+}
+
+
+def vocal_start(
+    prompt: str,
+    style: str,
+    title: str,
+    voice: str = 'any',
+    lyrics: str = '',
+) -> Dict[str, Any]:
     """Ставит задачу на песню с вокалом в очередь российского шлюза."""
     key = vocal_token()
     if not key:
         return {'error': 'no-key'}
 
+    hint = VOICE_HINT.get(voice, '')
+    tags = ', '.join([p for p in (style, hint) if p])
+
     body = {
         'model': VOCAL_MODEL,
-        'prompt': prompt,
         'instrumental': False,
         'title': (title or 'Трек')[:60],
     }
-    if style:
-        body['tags'] = style
+
+    if lyrics:
+        body['custom'] = True
+        body['customMode'] = True
+        body['lyrics'] = lyrics
+        body['prompt'] = lyrics
+        body['tags'] = tags or 'pop'
+        body['style'] = tags or 'pop'
+    else:
+        body['prompt'] = ', '.join([p for p in (prompt, hint) if p])
+        if tags:
+            body['tags'] = tags
 
     try:
         r = requests.post(
@@ -313,7 +338,7 @@ def handle_start(body: Dict[str, Any]) -> Dict[str, Any]:
         elif not text:
             return respond(400, {'error': 'Не удалось прочитать изображение, добавьте описание словами'})
 
-    if len(text) < 4:
+    if len(text) < 4 and not str(body.get('lyrics') or '').strip():
         return respond(400, {'error': 'Опишите музыку подробнее'})
 
     duration = int(body.get('duration') or 47)
@@ -345,7 +370,13 @@ def handle_start(body: Dict[str, Any]) -> Dict[str, Any]:
                          'Снимите флажок «С текстом», чтобы создать инструментал.',
                 'needVocalEngine': True,
             })
-        started = vocal_start(text, str(body.get('style') or ''), text[:60])
+        started = vocal_start(
+            text,
+            str(body.get('style') or ''),
+            text[:60] or 'Песня',
+            str(body.get('voice') or 'any'),
+            str(body.get('lyrics') or '').strip(),
+        )
         if started.get('error'):
             print(f'[vocal] start failed: {started["error"]}')
             return respond(502, {

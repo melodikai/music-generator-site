@@ -34,6 +34,9 @@ const Index = () => {
   const [style, setStyle] = useState('Лоу-фай');
   const [mood, setMood] = useState('Тёплое');
   const [withVocal, setWithVocal] = useState(false);
+  const [voice, setVoice] = useState('any');
+  const [lyrics, setLyrics] = useState('');
+  const [styleText, setStyleText] = useState('');
   const [generating, setGenerating] = useState(false);
   const [progress, setProgress] = useState(0);
   const [error, setError] = useState<string | null>(null);
@@ -100,7 +103,7 @@ const Index = () => {
   const handleGenerate = async () => {
     if (generating) return;
     const text = prompt.trim();
-    if (!image && text.length < 8) {
+    if (!image && !lyrics.trim() && text.length < 8) {
       setError('Опишите музыку чуть подробнее — хотя бы 8 символов');
       return;
     }
@@ -121,9 +124,11 @@ const Index = () => {
     try {
       const started = await startGeneration({
         prompt: text,
-        style,
+        style: styleText.trim() || style,
         mood,
         vocal: withVocal,
+        voice,
+        lyrics: lyrics.trim(),
         image,
       });
 
@@ -325,6 +330,12 @@ const Index = () => {
                 onMood={setMood}
                 withVocal={withVocal}
                 onVocal={setWithVocal}
+                voice={voice}
+                onVoice={setVoice}
+                lyrics={lyrics}
+                onLyrics={setLyrics}
+                styleText={styleText}
+                onStyleText={setStyleText}
                 generating={generating}
                 progress={Math.min(100, progress)}
                 onGenerate={handleGenerate}

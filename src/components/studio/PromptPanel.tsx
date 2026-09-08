@@ -15,11 +15,24 @@ type Props = {
   onMood: (mood: string) => void;
   withVocal: boolean;
   onVocal: (value: boolean) => void;
+  voice: string;
+  onVoice: (value: string) => void;
+  lyrics: string;
+  onLyrics: (value: string) => void;
+  styleText: string;
+  onStyleText: (value: string) => void;
   generating: boolean;
   progress: number;
   onGenerate: () => void;
   error: string | null;
 };
+
+const VOICES = [
+  { id: 'any', label: 'Любой', icon: 'Sparkles' },
+  { id: 'male', label: 'Мужской', icon: 'User' },
+  { id: 'female', label: 'Женский', icon: 'UserRound' },
+  { id: 'duet', label: 'Дуэт', icon: 'Users' },
+] as const;
 
 const useTypedPlaceholder = (active: boolean) => {
   const [text, setText] = useState('');
@@ -52,6 +65,12 @@ const PromptPanel = ({
   onMood,
   withVocal,
   onVocal,
+  voice,
+  onVoice,
+  lyrics,
+  onLyrics,
+  styleText,
+  onStyleText,
   generating,
   progress,
   onGenerate,
@@ -60,6 +79,7 @@ const PromptPanel = ({
   const [focused, setFocused] = useState(false);
   const [open, setOpen] = useState(false);
   const [photoOpen, setPhotoOpen] = useState(false);
+  const [lyricsOpen, setLyricsOpen] = useState(false);
   const typed = useTypedPlaceholder(!value && !focused);
 
   const togglePhoto = () => {
@@ -161,6 +181,20 @@ const PromptPanel = ({
             <Icon name="ImagePlus" size={13} />
             Музыка по фото
           </button>
+          <button
+            type="button"
+            onClick={() => {
+              setLyricsOpen((v) => !v);
+              if (!withVocal) onVocal(true);
+            }}
+            className={cn(
+              'glass-panel flex items-center gap-1.5 rounded-full px-3 py-1.5 text-[0.82em] transition-colors',
+              lyricsOpen || lyrics ? 'text-foreground' : 'text-foreground/75 hover:text-foreground',
+            )}
+          >
+            <Icon name="PenLine" size={13} />
+            Свой текст
+          </button>
           <span className="glass-panel rounded-full px-3 py-1.5 text-[0.82em] text-foreground/75">
             {style}
           </span>
@@ -169,7 +203,9 @@ const PromptPanel = ({
           </span>
           {withVocal && (
             <span className="glass-panel rounded-full px-3 py-1.5 text-[0.82em] text-foreground/75">
-              С вокалом
+              {VOICES.find((v) => v.id === voice)?.id === 'any'
+                ? 'С вокалом'
+                : `Вокал: ${VOICES.find((v) => v.id === voice)?.label.toLowerCase()}`}
             </span>
           )}
         </div>
@@ -183,6 +219,49 @@ const PromptPanel = ({
               onImage(null);
             }}
           />
+        )}
+
+        {lyricsOpen && (
+          <div className="glass-panel animate-scale-in mx-auto mt-3 space-y-3 rounded-2xl p-4 text-left">
+            <div className="flex items-start justify-between gap-3">
+              <p className="text-[0.72em] uppercase tracking-[0.14em] text-foreground/50">
+                Свой текст песни
+              </p>
+              <button
+                type="button"
+                onClick={() => {
+                  setLyricsOpen(false);
+                  onLyrics('');
+                  onStyleText('');
+                }}
+                className="text-foreground/50 transition-colors hover:text-foreground"
+                aria-label="Закрыть"
+              >
+                <Icon name="X" size={15} />
+              </button>
+            </div>
+            <textarea
+              value={lyrics}
+              onChange={(e) => onLyrics(e.target.value)}
+              rows={7}
+              placeholder={'[Куплет]\nГород спит, а я иду один...\n\n[Припев]\nСветят фонари над головой'}
+              className="w-full resize-y rounded-xl bg-white/8 px-3.5 py-3 text-[0.9em] leading-relaxed text-foreground/90 outline-none placeholder:text-foreground/35 focus:bg-white/12"
+            />
+            <div>
+              <p className="mb-2 text-[0.72em] uppercase tracking-[0.14em] text-foreground/50">
+                Стиль своими словами
+              </p>
+              <input
+                value={styleText}
+                onChange={(e) => onStyleText(e.target.value)}
+                placeholder="меланхоличный инди-рок, живые барабаны, 90 BPM"
+                className="w-full rounded-xl bg-white/8 px-3.5 py-2.5 text-[0.9em] text-foreground/90 outline-none placeholder:text-foreground/35 focus:bg-white/12"
+              />
+            </div>
+            <p className="text-[0.78em] leading-relaxed text-foreground/45">
+              Текст будет спет дословно. Пометки в квадратных скобках задают части песни.
+            </p>
+          </div>
         )}
 
         {open && (
@@ -248,6 +327,33 @@ const PromptPanel = ({
                 />
               </span>
             </label>
+
+            {withVocal && (
+              <div>
+                <p className="mb-2 text-[0.72em] uppercase tracking-[0.14em] text-foreground/50">
+                  Голос
+                </p>
+                <div className="flex flex-wrap gap-1.5">
+                  {VOICES.map((item) => (
+                    <button
+                      key={item.id}
+                      type="button"
+                      onClick={() => onVoice(item.id)}
+                      className={cn(
+                        'flex items-center gap-1.5 rounded-full px-3 py-1.5 text-[0.82em] transition-colors',
+                        voice === item.id
+                          ? 'bg-primary text-primary-foreground'
+                          : 'bg-white/10 text-foreground/75 hover:text-foreground',
+                      )}
+                    >
+                      <Icon name={item.icon} size={13} />
+                      {item.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+
             <div>
               <p className="mb-2 text-[0.72em] uppercase tracking-[0.14em] text-foreground/50">
                 Идеи запроса
