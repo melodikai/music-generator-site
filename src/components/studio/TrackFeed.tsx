@@ -53,7 +53,7 @@ const TrackFeed = ({
   const compact = section === 'create';
 
   return (
-    <section className="flex min-h-0 flex-1 flex-col px-4 pb-6 pt-3.5 sm:px-8 md:px-10">
+    <section className="flex flex-col px-4 pb-6 pt-3.5 sm:px-8 md:px-10">
       <div className="flex items-baseline justify-between gap-3 px-0.5 pb-2.5">
         <span className="text-[0.78em] uppercase tracking-[0.14em] text-foreground/50">
           {TITLES[section]}
@@ -95,7 +95,7 @@ const TrackFeed = ({
       ) : (
         <div
           className={cn(
-            'scroll-slim grid min-h-0 gap-2.5 overflow-y-auto pb-2',
+            'grid gap-2.5 pb-2',
             compact ? 'sm:grid-cols-2 lg:grid-cols-3' : 'sm:grid-cols-2 xl:grid-cols-3',
           )}
         >

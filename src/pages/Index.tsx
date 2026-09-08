@@ -255,18 +255,20 @@ const Index = () => {
   );
 
   return (
-    <div className="min-h-screen w-full overflow-x-hidden bg-background p-2.5 lg:h-screen lg:overflow-hidden">
-      <div className="flex h-full gap-2.5">
-        <div className="hidden w-[234px] flex-none lg:block">{sidebar}</div>
+    <div className="min-h-screen w-full overflow-x-hidden bg-background p-2.5">
+      <div className="flex min-h-[calc(100vh-20px)] gap-2.5">
+        <div className="sticky top-2.5 hidden h-[calc(100vh-20px)] w-[234px] flex-none lg:block">
+          {sidebar}
+        </div>
 
-        <main className="relative flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden rounded-[14px] bg-stage">
+        <main className="relative flex min-w-0 flex-1 flex-col overflow-hidden rounded-[14px] bg-stage">
           <div
             className="stage-veil pointer-events-none absolute inset-0 rounded-[14px] bg-cover"
             style={{ backgroundImage: `url(${STAGE_IMAGE})`, backgroundPosition: 'center 42%' }}
             aria-hidden
           />
 
-          <div className="scroll-slim relative z-10 flex min-h-0 flex-1 flex-col overflow-y-auto">
+          <div className="relative z-10 flex flex-1 flex-col">
             <div className="flex items-center justify-between px-4 pt-3 lg:hidden">
               <button
                 type="button"
