@@ -9,7 +9,7 @@ import TrackFeed from '@/components/studio/TrackFeed';
 import AccountDialog from '@/components/studio/AccountDialog';
 import DawEditor from '@/components/studio/DawEditor';
 import StemSplitter from '@/components/studio/StemSplitter';
-import { checkGeneration, startGeneration } from '@/lib/api';
+import { checkGeneration, fetchSavedTracks, saveProfile, startGeneration } from '@/lib/api';
 
 const STAGE_IMAGE =
   'https://cdn.poehali.dev/projects/1b7a339a-91f0-4ef8-9965-ce631414fd64/files/8a003fe7-72fb-4cd1-b63b-928feb3c181e.jpg';
@@ -45,6 +45,32 @@ const Index = () => {
     [],
   );
 
+  useEffect(() => {
+    let cancelled = false;
+    fetchSavedTracks(profile.email)
+      .then((saved) => {
+        if (cancelled || !saved.length) return;
+        const restored: Track[] = saved.map((t, i) => ({
+          id: t.id,
+          title: t.title || `Трек ${i + 1}`,
+          style: t.style || 'лоу-фай',
+          duration: `${Math.floor((t.seconds || 47) / 60)}:${String((t.seconds || 47) % 60).padStart(2, '0')}`,
+          bpm: 92,
+          createdAt: t.createdAt ? new Date(t.createdAt).toLocaleDateString('ru-RU') : 'Ранее',
+          favorite: false,
+          cover: 'linear-gradient(150deg, #f0d9c0, #b98a63)',
+          prompt: t.prompt,
+          audio: t.audio,
+          fromPhoto: t.fromPhoto,
+        }));
+        setTracks((prev) => [...restored, ...prev]);
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, [profile.email]);
+
   const handleGenerate = async () => {
     if (generating) return;
     const text = prompt.trim();
@@ -78,7 +104,15 @@ const Index = () => {
       let audio: string | null = null;
       for (let i = 0; i < 90; i += 1) {
         await new Promise((r) => window.setTimeout(r, 3000));
-        const state = await checkGeneration(started.id);
+        const state = await checkGeneration(started.id, {
+          email: profile.email,
+          title: started.prompt?.slice(0, 40) || text.slice(0, 40),
+          prompt: started.prompt || text,
+          style,
+          mood,
+          seconds: '47',
+          ...(started.imageUrl ? { imageUrl: started.imageUrl } : {}),
+        });
         if (state.status === 'succeeded') {
           audio = state.audio;
           break;
@@ -289,7 +323,10 @@ const Index = () => {
         email={profile.email}
         credits={50}
         used={used}
-        onSave={(name, email) => setProfile({ name, email })}
+        onSave={(name, email) => {
+          setProfile({ name, email });
+          saveProfile(email, name, 'standard').catch(() => undefined);
+        }}
       />
     </div>
   );

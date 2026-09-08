@@ -1,11 +1,11 @@
 import base64
 import json
 import os
-import uuid
 from typing import Any, Dict, Optional
 
-import boto3
 import requests
+
+from storage import upload_file
 
 REPLICATE_API = 'https://api.replicate.com/v1'
 STEMS_MODEL = os.environ.get('STEMS_MODEL', 'ryan5453/demucs')
@@ -46,19 +46,6 @@ def headers() -> Dict[str, str]:
     return {'Authorization': f'Token {token()}', 'Content-Type': 'application/json'}
 
 
-def s3_client():
-    return boto3.client(
-        's3',
-        endpoint_url='https://bucket.poehali.dev',
-        aws_access_key_id=os.environ['AWS_ACCESS_KEY_ID'],
-        aws_secret_access_key=os.environ['AWS_SECRET_ACCESS_KEY'],
-    )
-
-
-def cdn_url(key: str) -> str:
-    return f"https://cdn.poehali.dev/projects/{os.environ['AWS_ACCESS_KEY_ID']}/bucket/{key}"
-
-
 def upload_audio(data_url: str) -> str:
     raw = data_url.split(',', 1)[-1]
     binary = base64.b64decode(raw)
@@ -69,9 +56,7 @@ def upload_audio(data_url: str) -> str:
         ext = 'ogg'
     elif 'audio/mp4' in data_url or 'audio/m4a' in data_url:
         ext = 'm4a'
-    key = f'uploads/{uuid.uuid4().hex}.{ext}'
-    s3_client().put_object(Bucket='files', Key=key, Body=binary, ContentType=f'audio/{ext}')
-    return cdn_url(key)
+    return upload_file('uploads', ext, binary, f'audio/{ext}')
 
 
 def latest_version(model: str) -> str:
@@ -126,7 +111,11 @@ def handle_status(prediction_id: str) -> Dict[str, Any]:
         for key, value in out.items():
             if not value or not isinstance(value, str):
                 continue
-            stems.append({'id': key, 'name': STEM_NAMES.get(key, key), 'url': value})
+            url = value
+            file = requests.get(value, timeout=90)
+            if file.status_code < 400:
+                url = upload_file('stems', 'mp3', file.content, 'audio/mpeg')
+            stems.append({'id': key, 'name': STEM_NAMES.get(key, key), 'url': url})
 
     return respond(200, {
         'id': prediction_id,

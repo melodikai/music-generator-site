@@ -8,6 +8,7 @@ export type StartResult = {
   status: string;
   caption?: string;
   prompt?: string;
+  imageUrl?: string | null;
 };
 
 export type StatusResult = {
@@ -35,11 +36,46 @@ export const startGeneration = async (payload: {
   return data;
 };
 
-export const checkGeneration = async (id: string): Promise<StatusResult> => {
-  const res = await fetch(`${MUSIC_URL}?id=${encodeURIComponent(id)}`);
+export const checkGeneration = async (
+  id: string,
+  meta: Record<string, string> = {},
+): Promise<StatusResult> => {
+  const query = new URLSearchParams({ id, ...meta }).toString();
+  const res = await fetch(`${MUSIC_URL}?${query}`);
   const data = await res.json();
   if (!res.ok) throw new Error(data.error || 'Ошибка проверки статуса');
   return data;
+};
+
+export type SavedTrack = {
+  id: string;
+  title: string;
+  prompt: string;
+  style: string;
+  mood: string;
+  audio: string | null;
+  image: string | null;
+  fromPhoto: boolean;
+  seconds: number;
+  createdAt: string | null;
+};
+
+export const fetchSavedTracks = async (email = ''): Promise<SavedTrack[]> => {
+  const res = await fetch(`${MUSIC_URL}?list=tracks&email=${encodeURIComponent(email)}`);
+  if (!res.ok) return [];
+  const data = await res.json();
+  return data.tracks || [];
+};
+
+export const saveProfile = async (email: string, name: string, plan = 'free') => {
+  const res = await fetch(MUSIC_URL, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ action: 'profile', email, name, plan }),
+  });
+  if (!res.ok) return null;
+  const data = await res.json();
+  return data.user as { email: string; name: string; plan: string; used: number };
 };
 
 export type Stem = { id: string; name: string; url: string };

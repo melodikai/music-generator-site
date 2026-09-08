@@ -2,11 +2,12 @@ import base64
 import json
 import os
 import time
-import uuid
 from typing import Any, Dict, Optional
 
-import boto3
 import requests
+
+import db
+from storage import upload_file
 
 REPLICATE_API = 'https://api.replicate.com/v1'
 MUSIC_MODEL = os.environ.get('MUSIC_MODEL', 'stackadoc/stable-audio-open-1.0')
@@ -38,19 +39,6 @@ def headers() -> Dict[str, str]:
     return {'Authorization': f'Token {token()}', 'Content-Type': 'application/json'}
 
 
-def s3_client():
-    return boto3.client(
-        's3',
-        endpoint_url='https://bucket.poehali.dev',
-        aws_access_key_id=os.environ['AWS_ACCESS_KEY_ID'],
-        aws_secret_access_key=os.environ['AWS_SECRET_ACCESS_KEY'],
-    )
-
-
-def cdn_url(key: str) -> str:
-    return f"https://cdn.poehali.dev/projects/{os.environ['AWS_ACCESS_KEY_ID']}/bucket/{key}"
-
-
 def latest_version(model: str) -> str:
     r = requests.get(f'{REPLICATE_API}/models/{model}', headers=headers(), timeout=15)
     r.raise_for_status()
@@ -73,9 +61,7 @@ def upload_image(data_url: str) -> str:
         ext = 'jpg'
     elif 'image/webp' in data_url:
         ext = 'webp'
-    key = f'uploads/{uuid.uuid4().hex}.{ext}'
-    s3_client().put_object(Bucket='files', Key=key, Body=binary, ContentType=f'image/{ext}')
-    return cdn_url(key)
+    return upload_file('images', ext, binary, f'image/{ext}')
 
 
 def describe_image(image_url: str) -> str:
@@ -112,6 +98,7 @@ def handle_start(body: Dict[str, Any]) -> Dict[str, Any]:
     text = (body.get('prompt') or '').strip()
     image = body.get('image') or ''
     source_note = ''
+    image_url = None
 
     if image:
         image_url = upload_image(image)
@@ -147,10 +134,11 @@ def handle_start(body: Dict[str, Any]) -> Dict[str, Any]:
         'status': prediction['status'],
         'caption': source_note,
         'prompt': text,
+        'imageUrl': image_url if image else None,
     })
 
 
-def handle_status(prediction_id: str) -> Dict[str, Any]:
+def handle_status(prediction_id: str, meta: Dict[str, Any]) -> Dict[str, Any]:
     """Отдаёт состояние генерации и ссылку на готовый трек."""
     r = requests.get(f'{REPLICATE_API}/predictions/{prediction_id}', headers=headers(), timeout=15)
     if r.status_code >= 400:
@@ -167,11 +155,23 @@ def handle_status(prediction_id: str) -> Dict[str, Any]:
             out = out.get('audio') or out.get('url')
         if out:
             file = requests.get(str(out), timeout=60)
-            key = f'tracks/{prediction_id}.wav'
-            s3_client().put_object(
-                Bucket='files', Key=key, Body=file.content, ContentType='audio/wav'
-            )
-            audio = cdn_url(key)
+            audio = upload_file('tracks', 'wav', file.content, 'audio/wav')
+
+            db.ensure_schema()
+            db.save_track({
+                'user_email': meta.get('email', ''),
+                'title': meta.get('title', ''),
+                'prompt': meta.get('prompt', ''),
+                'style': meta.get('style', ''),
+                'mood': meta.get('mood', ''),
+                'audio_url': audio,
+                'image_url': meta.get('imageUrl'),
+                'from_photo': bool(meta.get('imageUrl')),
+                'duration_seconds': int(meta.get('seconds') or 0),
+                'prediction_id': prediction_id,
+            })
+            if meta.get('email'):
+                db.bump_usage(meta['email'])
 
     return respond(200, {
         'id': prediction_id,
@@ -191,18 +191,36 @@ def handler(event: Dict[str, Any], context) -> Dict[str, Any]:
     params = event.get('queryStringParameters') or {}
 
     if method == 'GET':
+        if params.get('list') == 'tracks':
+            db.ensure_schema()
+            return respond(200, {'tracks': db.list_tracks(params.get('email') or '')})
+
         prediction_id = params.get('id')
         if not prediction_id:
             return respond(400, {'error': 'Не указан идентификатор генерации'})
         if not token():
             return respond(503, {'error': 'Генерация временно недоступна: не настроен доступ к движку'})
-        return handle_status(prediction_id)
-
-    if not token():
-        return respond(503, {'error': 'Генерация временно недоступна: не настроен доступ к движку'})
+        return handle_status(prediction_id, {
+            'email': params.get('email') or '',
+            'title': params.get('title') or '',
+            'prompt': params.get('prompt') or '',
+            'style': params.get('style') or '',
+            'mood': params.get('mood') or '',
+            'imageUrl': params.get('imageUrl'),
+            'seconds': params.get('seconds') or 0,
+        })
 
     if method == 'POST':
         body = json.loads(event.get('body') or '{}')
+        if body.get('action') == 'profile':
+            db.ensure_schema()
+            return respond(200, {'user': db.upsert_user(
+                str(body.get('email') or ''),
+                str(body.get('name') or ''),
+                str(body.get('plan') or 'free'),
+            )})
+        if not token():
+            return respond(503, {'error': 'Генерация временно недоступна: не настроен доступ к движку'})
         return handle_start(body)
 
     return respond(405, {'error': 'Метод не поддерживается'})
