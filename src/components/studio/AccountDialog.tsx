@@ -21,9 +21,27 @@ type Props = {
 };
 
 const PLANS = [
-  { id: 'free', name: 'Проба', price: '0 ₽', note: '10 треков в месяц' },
-  { id: 'author', name: 'Автор', price: '590 ₽', note: '120 треков, коммерческая лицензия' },
-  { id: 'studio', name: 'Студия', price: '1 490 ₽', note: 'Без лимита, приоритетная очередь' },
+  {
+    id: 'free',
+    name: 'Бесплатный',
+    price: '0 ₽',
+    note: '10 треков в месяц · длина до 1 минуты',
+    limits: ['Без редактирования трека', 'Только скачивание готового файла'],
+  },
+  {
+    id: 'author',
+    name: 'Автор',
+    price: '590 ₽',
+    note: '120 треков, коммерческая лицензия',
+    limits: [],
+  },
+  {
+    id: 'studio',
+    name: 'Студия',
+    price: '1 490 ₽',
+    note: 'Без лимита, приоритетная очередь',
+    limits: [],
+  },
 ];
 
 const AccountDialog = ({
@@ -145,17 +163,32 @@ const AccountDialog = ({
                 type="button"
                 onClick={() => setPlan(p.id)}
                 className={cn(
-                  'flex w-full items-center justify-between gap-3 rounded-2xl border px-4 py-3 text-left transition-colors',
+                  'w-full rounded-2xl border px-4 py-3 text-left transition-colors',
                   plan === p.id
                     ? 'border-ring bg-secondary'
                     : 'border-border bg-transparent hover:bg-secondary/60',
                 )}
               >
-                <span>
-                  <span className="block text-[0.95em] text-foreground">{p.name}</span>
-                  <span className="block text-[0.82em] text-muted-foreground">{p.note}</span>
+                <span className="flex items-center justify-between gap-3">
+                  <span>
+                    <span className="block text-[0.95em] text-foreground">{p.name}</span>
+                    <span className="block text-[0.82em] text-muted-foreground">{p.note}</span>
+                  </span>
+                  <span className="font-display text-[1em] text-foreground">{p.price}</span>
                 </span>
-                <span className="font-display text-[1em] text-foreground">{p.price}</span>
+                {p.limits.length > 0 && (
+                  <span className="mt-2 block space-y-1">
+                    {p.limits.map((limit) => (
+                      <span
+                        key={limit}
+                        className="flex items-center gap-1.5 text-[0.8em] text-muted-foreground"
+                      >
+                        <Icon name="Minus" size={12} className="flex-none" />
+                        {limit}
+                      </span>
+                    ))}
+                  </span>
+                )}
               </button>
             ))}
           </TabsContent>
