@@ -11,9 +11,8 @@ import limits
 import styles
 from storage import upload_file
 
-VOCAL_API_URL = os.environ.get('VOCAL_API_URL', 'https://gptunnel.ru/v1/media/create')
-VOCAL_RESULT_URL = os.environ.get('VOCAL_RESULT_URL', 'https://gptunnel.ru/v1/media/result')
-VOCAL_MODEL = os.environ.get('VOCAL_MODEL', 'suno')
+VOCAL_TASKS_URL = os.environ.get('VOCAL_TASKS_URL', 'https://gptunnel.ru/api/v2/media/tasks')
+VOCAL_MODEL = os.environ.get('VOCAL_MODEL', 'grom-zvuk')
 
 HF_API = os.environ.get('HF_API', 'https://router.huggingface.co/hf-inference/models')
 HF_MUSIC_MODEL = os.environ.get('HF_MUSIC_MODEL', 'facebook/musicgen-small')
@@ -63,29 +62,6 @@ def vocal_token() -> Optional[str]:
     return os.environ.get('VOCAL_API_KEY')
 
 
-def extract_audio_url(data: Any) -> Optional[str]:
-    """Ищет ссылку на аудио в ответе шлюза любой формы."""
-    if isinstance(data, str):
-        return data if data.startswith('http') and '.mp3' in data or data.startswith('http') else None
-    if isinstance(data, list):
-        for item in data:
-            found = extract_audio_url(item)
-            if found:
-                return found
-        return None
-    if isinstance(data, dict):
-        for name in ('audio_url', 'audioUrl', 'audio', 'url', 'source_audio_url'):
-            value = data.get(name)
-            if isinstance(value, str) and value.startswith('http'):
-                return value
-        for value in data.values():
-            if isinstance(value, (dict, list)):
-                found = extract_audio_url(value)
-                if found:
-                    return found
-    return None
-
-
 VOICE_HINT = {
     'male': 'male vocalist, male lead vocals',
     'female': 'female vocalist, female lead vocals',
@@ -101,41 +77,33 @@ def vocal_start(
     lyrics: str = '',
     seconds: int = 165,
 ) -> Dict[str, Any]:
-    """Ставит задачу на песню с вокалом в очередь российского шлюза."""
+    """Ставит задачу на песню с вокалом (Гром Звук) в очередь шлюза."""
     key = vocal_token()
     if not key:
         return {'error': 'no-key'}
 
     hint = VOICE_HINT.get(voice, '')
-    tags = ', '.join([p for p in (style, hint) if p])
+    tags = ', '.join([p for p in (style, hint) if p]) or 'pop'
 
     body = {
         'model': VOCAL_MODEL,
-        'instrumental': False,
-        'title': (title or 'Трек')[:60],
+        'params': {
+            'tags': tags[:800],
+            'title': (title or 'Трек')[:54],
+        },
     }
 
-    # Просим движок уложиться в нужный хронометраж словами:
-    # отдельного поля длительности у шлюза нет.
-    length_hint = f'song length about {max(1, round(seconds / 60, 1))} minutes'
-
     if lyrics:
-        body['custom'] = True
-        body['customMode'] = True
-        body['lyrics'] = lyrics
-        body['prompt'] = lyrics
-        body['tags'] = tags or 'pop'
-        body['style'] = tags or 'pop'
+        body['prompt'] = lyrics[:3000]
+        body['params']['is_custom'] = True
     else:
-        body['prompt'] = ', '.join([p for p in (prompt, hint, length_hint) if p])
-        if tags:
-            body['tags'] = tags
-
-
+        length_hint = f'song length about {max(1, round(seconds / 60, 1))} minutes'
+        body['prompt'] = ', '.join([p for p in (prompt, hint, length_hint) if p])[:3000]
+        body['params']['is_custom'] = False
 
     try:
         r = requests.post(
-            VOCAL_API_URL,
+            VOCAL_TASKS_URL,
             headers={'Authorization': key, 'Content-Type': 'application/json'},
             json=body,
             timeout=60,
@@ -151,18 +119,7 @@ def vocal_start(
     if r.status_code >= 400:
         return {'error': f'{r.status_code}: {json.dumps(data, ensure_ascii=False)[:300]}'}
 
-    task_id = None
-    if isinstance(data, dict):
-        for name in ('id', 'task_id', 'taskId', 'requestId'):
-            if data.get(name):
-                task_id = data[name]
-                break
-        if not task_id and isinstance(data.get('data'), dict):
-            inner = data['data']
-            for name in ('id', 'task_id', 'taskId'):
-                if inner.get(name):
-                    task_id = inner[name]
-                    break
+    task_id = data.get('id') if isinstance(data, dict) else None
     if not task_id:
         return {'error': f'no-task-id: {json.dumps(data, ensure_ascii=False)[:300]}'}
 
@@ -176,33 +133,35 @@ def vocal_result(task_id: str) -> Dict[str, Any]:
         return {'status': 'failed', 'error': 'Движок с вокалом не подключён'}
 
     try:
-        r = requests.post(
-            VOCAL_RESULT_URL,
-            headers={'Authorization': key, 'Content-Type': 'application/json'},
-            json={'task_id': task_id},
+        r = requests.get(
+            f'{VOCAL_TASKS_URL}/{task_id}',
+            headers={'Authorization': key},
             timeout=60,
         )
         data = r.json()
     except (requests.RequestException, ValueError):
         return {'status': 'processing'}
 
-    print(f'[vocal] result {r.status_code}: {json.dumps(data, ensure_ascii=False)[:600]}')
-
     if r.status_code >= 400:
         return {'status': 'processing'}
 
-    status = ''
-    if isinstance(data, dict):
-        status = str(data.get('status') or data.get('state') or '').lower()
+    status = str(data.get('status') or '').lower() if isinstance(data, dict) else ''
 
-    audio = extract_audio_url(data)
-    if audio:
-        return {'status': 'succeeded', 'audio': audio}
+    if status == 'done':
+        result = data.get('result') or []
+        if isinstance(result, list) and result:
+            first = result[0] if isinstance(result[0], dict) else {}
+            url = first.get('url')
+            if url:
+                return {'status': 'succeeded', 'audio': url}
+        return {'status': 'processing'}
 
-    if status in ('failed', 'error', 'canceled'):
+    if status == 'failed':
+        err = data.get('error') or {}
+        message = err.get('message') if isinstance(err, dict) else None
         return {
             'status': 'failed',
-            'error': 'Движок с вокалом не справился. Попробуйте ещё раз — '
+            'error': message or 'Движок с вокалом не справился. Попробуйте ещё раз — '
                      'обычно со второй попытки получается.',
         }
 
@@ -506,7 +465,7 @@ def handle_start(body: Dict[str, Any]) -> Dict[str, Any]:
                 'error': 'Движок с вокалом не принял запрос. Проверьте баланс и ключ доступа.'
             })
 
-        limits.log_generation(email, device_id, 'vocal', 'suno', vocal_seconds)
+        limits.log_generation(email, device_id, 'vocal', 'grom-zvuk', vocal_seconds)
 
         return respond(200, {
             'id': f'vocal:{started["taskId"]}',
