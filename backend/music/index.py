@@ -2,6 +2,7 @@ import base64
 import json
 import os
 import time
+from concurrent.futures import ThreadPoolExecutor
 from typing import Any, Dict, Optional
 
 import requests
@@ -84,6 +85,23 @@ def extract_audio_url(data: Any) -> Optional[str]:
                 if found:
                     return found
     return None
+
+
+def extract_track_urls(data: Any) -> list:
+    """Собирает ссылки на все готовые дорожки (Suno отдаёт две за один запрос)."""
+    items = data.get('result') if isinstance(data, dict) else None
+    urls = []
+    if isinstance(items, list):
+        for item in items:
+            if isinstance(item, dict):
+                url = item.get('audio_url') or item.get('url')
+                if isinstance(url, str) and url.startswith('http') and url not in urls:
+                    urls.append(url)
+    if not urls:
+        single = extract_audio_url(data)
+        if single:
+            urls.append(single)
+    return urls[:2]
 
 
 VOICE_HINT = {
@@ -186,7 +204,7 @@ def vocal_result(task_id: str) -> Dict[str, Any]:
     except (requests.RequestException, ValueError):
         return {'status': 'processing'}
 
-    print(f'[vocal] result {r.status_code}: {json.dumps(data, ensure_ascii=False)[:600]}')
+    print(f'[vocal] result {r.status_code}: {json.dumps(data, ensure_ascii=False)[:2500]}')
 
     if r.status_code >= 400:
         return {'status': 'processing'}
@@ -195,9 +213,11 @@ def vocal_result(task_id: str) -> Dict[str, Any]:
     if isinstance(data, dict):
         status = str(data.get('status') or data.get('state') or '').lower()
 
-    audio = extract_audio_url(data)
-    if audio:
-        return {'status': 'succeeded', 'audio': audio}
+    audios = extract_track_urls(data)
+    finished = status in ('done', 'succeeded', 'success', 'completed')
+
+    if audios and (finished or not status):
+        return {'status': 'succeeded', 'audio': audios[0], 'audios': audios}
 
     if status in ('failed', 'error', 'canceled'):
         return {
@@ -577,13 +597,22 @@ def handle_status(prediction_id: str, meta: Dict[str, Any]) -> Dict[str, Any]:
         task_id = prediction_id.split(':', 1)[1]
         state = vocal_result(task_id)
         if state['status'] == 'succeeded':
-            file = requests.get(state['audio'], timeout=180)
-            audio = upload_file('tracks', 'mp3', file.content, 'audio/mpeg')
-            store_track(audio, meta, prediction_id)
+            sources = state.get('audios') or [state['audio']]
+
+            def copy_track(url: str) -> str:
+                file = requests.get(url, timeout=60)
+                return upload_file('tracks', 'mp3', file.content, 'audio/mpeg')
+
+            with ThreadPoolExecutor(max_workers=2) as pool:
+                stored = list(pool.map(copy_track, sources))
+
+            for audio in stored:
+                store_track(audio, meta, prediction_id)
             return respond(200, {
                 'id': prediction_id,
                 'status': 'succeeded',
-                'audio': audio,
+                'audio': stored[0],
+                'audios': stored,
                 'error': None,
             })
         return respond(200, {

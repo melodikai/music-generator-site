@@ -81,6 +81,7 @@ export type StatusResult = {
   id: string;
   status: string;
   audio: string | null;
+  audios?: string[];
   error?: string | null;
 };
 

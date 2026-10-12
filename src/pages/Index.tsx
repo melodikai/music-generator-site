@@ -145,6 +145,7 @@ const Index = () => {
       if (started.usage) setUsage(started.usage);
 
       let audio: string | null = started.audio || null;
+      let audios: string[] = audio ? [audio] : [];
       const localMode =
         started.engine !== 'vocal' &&
         (started.status === 'local' || started.engine === 'browser');
@@ -175,6 +176,7 @@ const Index = () => {
             }).catch(() => null)
           : null;
         audio = stored || URL.createObjectURL(blob);
+        audios = [audio];
       }
 
       const attempts = started.engine === 'vocal' ? 160 : 90;
@@ -191,6 +193,7 @@ const Index = () => {
         });
         if (state.status === 'succeeded') {
           audio = state.audio;
+          audios = state.audios?.length ? state.audios : state.audio ? [state.audio] : [];
           break;
         }
         if (state.status === 'failed' || state.status === 'canceled') {
@@ -205,13 +208,15 @@ const Index = () => {
       if (!audio) throw new Error('Генерация заняла слишком много времени, попробуйте ещё раз');
 
       setProgress(100);
-      const fresh = makeTrack(started.prompt || text, style, tracks.length, {
-        audio,
-        seconds,
-        fromPhoto: Boolean(image),
-      });
-      setTracks((prev) => [fresh, ...prev]);
-      setActiveId(fresh.id);
+      const fresh = (audios.length ? audios : [audio]).map((url, n) =>
+        makeTrack(started.prompt || text, style, tracks.length + n, {
+          audio: url,
+          seconds,
+          fromPhoto: Boolean(image),
+        }),
+      );
+      setTracks((prev) => [...fresh, ...prev]);
+      setActiveId(fresh[0].id);
       setPlaying(true);
       setPrompt('');
       setImage(null);
