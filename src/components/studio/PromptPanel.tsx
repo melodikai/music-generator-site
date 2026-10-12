@@ -201,7 +201,7 @@ const PromptPanel = ({
             Свой текст
           </button>
           <span className="glass-panel rounded-full px-3 py-1.5 text-[0.82em] text-foreground/75">
-            {style}
+            {spokenStyle || style}
           </span>
           <span className="glass-panel rounded-full px-3 py-1.5 text-[0.82em] text-foreground/75">
             {mood}

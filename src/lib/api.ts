@@ -71,6 +71,7 @@ export type StartResult = {
   audio?: string | null;
   engine?: 'huggingface' | 'browser' | 'vocal';
   caption?: string;
+  style?: string;
   prompt?: string;
   seconds?: number;
   imageUrl?: string | null;

@@ -1,3 +1,4 @@
+import { detectStyle } from '@/lib/style-detect';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import Icon from '@/components/ui/icon';
 import { cn } from '@/lib/utils';
@@ -144,6 +145,8 @@ const Index = () => {
 
       if (started.usage) setUsage(started.usage);
 
+      const usedStyle = started.style || detectStyle(text) || style;
+
       let audio: string | null = started.audio || null;
       let audios: string[] = audio ? [audio] : [];
       const localMode =
@@ -156,7 +159,7 @@ const Index = () => {
         setProgress(55);
         const blob = await generateLocalTrack({
           prompt: started.prompt || text,
-          style,
+          style: usedStyle,
           mood,
           vocal: withVocal,
           seconds,
@@ -169,7 +172,7 @@ const Index = () => {
               email: profile.email,
               title: text.slice(0, 40),
               prompt: text,
-              style,
+              style: usedStyle,
               mood,
               imageUrl: started.imageUrl,
               seconds,
@@ -186,7 +189,7 @@ const Index = () => {
           email: profile.email,
           title: started.prompt?.slice(0, 40) || text.slice(0, 40),
           prompt: started.prompt || text,
-          style,
+          style: usedStyle,
           mood,
           seconds: String(seconds),
           ...(started.imageUrl ? { imageUrl: started.imageUrl } : {}),
@@ -209,7 +212,7 @@ const Index = () => {
 
       setProgress(100);
       const fresh = (audios.length ? audios : [audio]).map((url, n) =>
-        makeTrack(started.prompt || text, style, tracks.length + n, {
+        makeTrack(started.prompt || text, usedStyle, tracks.length + n, {
           audio: url,
           seconds,
           fromPhoto: Boolean(image),

@@ -15,11 +15,35 @@ const SCALES: Record<string, number[]> = {
 
 const STYLE_PRESET: Record<string, { bpm: number; scale: string; wave: OscillatorType }> = {
   'Лоу-фай': { bpm: 76, scale: 'dorian', wave: 'sine' },
-  Кинематографика: { bpm: 68, scale: 'minor', wave: 'triangle' },
-  Электроника: { bpm: 118, scale: 'minor', wave: 'sawtooth' },
-  Акустика: { bpm: 92, scale: 'major', wave: 'triangle' },
+  Рок: { bpm: 128, scale: 'minor', wave: 'sawtooth' },
+  Поп: { bpm: 110, scale: 'major', wave: 'triangle' },
+  Метал: { bpm: 160, scale: 'minor', wave: 'sawtooth' },
+  'Хард-рок': { bpm: 140, scale: 'minor', wave: 'sawtooth' },
+  'Хип-хоп': { bpm: 90, scale: 'minor', wave: 'square' },
+  Рэп: { bpm: 90, scale: 'minor', wave: 'square' },
+  Электроника: { bpm: 124, scale: 'minor', wave: 'sawtooth' },
   Джаз: { bpm: 96, scale: 'dorian', wave: 'sine' },
+  Блюз: { bpm: 72, scale: 'penta', wave: 'triangle' },
+  Регги: { bpm: 78, scale: 'major', wave: 'triangle' },
+  Кинематографика: { bpm: 68, scale: 'minor', wave: 'triangle' },
+  Акустика: { bpm: 92, scale: 'major', wave: 'triangle' },
+  Панк: { bpm: 170, scale: 'major', wave: 'sawtooth' },
+  'Панк-поп': { bpm: 160, scale: 'major', wave: 'sawtooth' },
+  Фанк: { bpm: 104, scale: 'dorian', wave: 'square' },
+  Кантри: { bpm: 100, scale: 'major', wave: 'triangle' },
+  Синтвейв: { bpm: 108, scale: 'minor', wave: 'sawtooth' },
+  Классика: { bpm: 72, scale: 'major', wave: 'sine' },
   Эмбиент: { bpm: 60, scale: 'penta', wave: 'sine' },
+  Диско: { bpm: 118, scale: 'major', wave: 'square' },
+  Инди: { bpm: 112, scale: 'major', wave: 'triangle' },
+  Шансон: { bpm: 84, scale: 'minor', wave: 'triangle' },
+  Латина: { bpm: 98, scale: 'dorian', wave: 'triangle' },
+  'Ар-эн-би': { bpm: 82, scale: 'dorian', wave: 'sine' },
+  Народная: { bpm: 96, scale: 'penta', wave: 'triangle' },
+  Детская: { bpm: 104, scale: 'major', wave: 'sine' },
+  Гранж: { bpm: 120, scale: 'minor', wave: 'sawtooth' },
+  Марш: { bpm: 112, scale: 'major', wave: 'square' },
+  Вальс: { bpm: 90, scale: 'major', wave: 'sine' },
 };
 
 const MOOD_SHIFT: Record<string, number> = {
@@ -86,8 +110,11 @@ const encodeWav = (buffer: AudioBuffer) => {
 const note = (root: number, semitone: number) => root * 2 ** (semitone / 12);
 
 export const generateLocalTrack = async (params: Params): Promise<Blob> => {
-  const preset = STYLE_PRESET[params.style] || STYLE_PRESET['Лоу-фай'];
-  const seed = hash(`${params.prompt}|${params.style}|${params.mood}`);
+  const preset =
+    STYLE_PRESET[params.style] ||
+    STYLE_PRESET[params.style.charAt(0).toUpperCase() + params.style.slice(1)] ||
+    STYLE_PRESET['Поп'];
+  const seed = hash(`${params.prompt}|${params.style}|${params.mood}|${Date.now()}`);
   const random = rng(seed);
   const scale = SCALES[preset.scale];
   const shift = MOOD_SHIFT[params.mood] ?? 0;
