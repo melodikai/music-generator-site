@@ -27,8 +27,6 @@ const SHOW_SHOWCASE_LINK = false;
 type Props = {
   current: SectionId;
   onSelect: (id: SectionId) => void;
-  activeStyle: string;
-  onStyle: (style: string) => void;
   onAccount: () => void;
   userName: string;
   credits: number;
@@ -49,8 +47,6 @@ const BrandMark = () => (
 const StudioSidebar = ({
   current,
   onSelect,
-  activeStyle,
-  onStyle,
   onAccount,
   userName,
   credits,

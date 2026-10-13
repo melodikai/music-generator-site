@@ -15,9 +15,6 @@ const Index = () => {
   const studio = useStudioPage();
   const {
     section,
-    setSection,
-    style,
-    setStyle,
     setError,
     menuOpen,
     setMenuOpen,
@@ -39,12 +36,6 @@ const Index = () => {
     <StudioSidebar
       current={section}
       onSelect={handleSection}
-      activeStyle={style}
-      onStyle={(s) => {
-        setStyle(s);
-        setSection('create');
-        setMenuOpen(false);
-      }}
       onAccount={() => {
         if (user) setAccountOpen(true);
         else setAuthOpen(true);
