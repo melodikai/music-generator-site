@@ -47,7 +47,7 @@ STYLE_MAP: List[Tuple[str, List[str], str]] = [
      'pop, catchy melody, polished modern production, bright hooks'),
     ('Панк-поп', ['панк-поп', 'поп-панк', 'pop punk'],
      'pop punk, bright distorted guitars, energetic youthful drums'),
-    ('Ар-эн-би', ['рнб', 'r&b', 'rnb', 'ритм-н-блюз'],
+    ('R&B', ['рнб', 'r&b', 'rnb', 'ритм-н-блюз'],
      'r&b, smooth groove, silky chords, laid back drums'),
     ('Гранж', ['гранж', 'grunge'],
      'grunge, raw fuzzy guitars, loose drums, nineties mood'),

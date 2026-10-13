@@ -38,7 +38,7 @@ const STYLE_PRESET: Record<string, { bpm: number; scale: string; wave: Oscillato
   Инди: { bpm: 112, scale: 'major', wave: 'triangle' },
   Шансон: { bpm: 84, scale: 'minor', wave: 'triangle' },
   Латина: { bpm: 98, scale: 'dorian', wave: 'triangle' },
-  'Ар-эн-би': { bpm: 82, scale: 'dorian', wave: 'sine' },
+  'R&B': { bpm: 82, scale: 'dorian', wave: 'sine' },
   Народная: { bpm: 96, scale: 'penta', wave: 'triangle' },
   Детская: { bpm: 104, scale: 'major', wave: 'sine' },
   Гранж: { bpm: 120, scale: 'minor', wave: 'sawtooth' },
