@@ -1,26 +1,28 @@
-import Icon from '@/components/ui/icon';
-import { cn } from '@/lib/utils';
-import { STYLES } from '@/lib/studio-data';
+import Icon from "@/components/ui/icon";
+import { cn } from "@/lib/utils";
 
 export type SectionId =
-  | 'create'
-  | 'tracks'
-  | 'studio'
-  | 'stems'
-  | 'library'
-  | 'favorites'
-  | 'account'
-  | 'history';
+  | "create"
+  | "tracks"
+  | "studio"
+  | "stems"
+  | "library"
+  | "favorites"
+  | "account"
+  | "history";
 
 export const SECTIONS: { id: SectionId; label: string; icon: string }[] = [
-  { id: 'create', label: 'Создать', icon: 'AudioLines' },
-  { id: 'tracks', label: 'Мои треки', icon: 'Music' },
-  { id: 'studio', label: 'Студия', icon: 'SlidersHorizontal' },
-  { id: 'stems', label: 'Дорожки', icon: 'Split' },
-  { id: 'library', label: 'Библиотека', icon: 'ListMusic' },
-  { id: 'favorites', label: 'Избранное', icon: 'Star' },
-  { id: 'history', label: 'История', icon: 'Clock' },
+  { id: "create", label: "Создать", icon: "AudioLines" },
+  { id: "tracks", label: "Мои треки", icon: "Music" },
+  { id: "studio", label: "Студия", icon: "SlidersHorizontal" },
+  { id: "stems", label: "Дорожки", icon: "Split" },
+  { id: "library", label: "Библиотека", icon: "ListMusic" },
+  { id: "favorites", label: "Избранное", icon: "Star" },
+  { id: "history", label: "История", icon: "Clock" },
 ];
+
+const HIDDEN_SECTIONS: SectionId[] = ["studio", "stems", "favorites"];
+const SHOW_SHOWCASE_LINK = false;
 
 type Props = {
   current: SectionId;
@@ -59,7 +61,7 @@ const StudioSidebar = ({
     <div className="mb-8 flex items-center justify-between gap-2 px-1.5 pt-1">
       <button
         type="button"
-        onClick={() => onSelect('create')}
+        onClick={() => onSelect("create")}
         className="flex items-center gap-2.5 rounded-lg transition-opacity hover:opacity-80"
       >
         <BrandMark />
@@ -80,51 +82,44 @@ const StudioSidebar = ({
     </div>
 
     <nav className="flex flex-col gap-0.5">
-      {SECTIONS.map((item) => (
-        <button
-          key={item.id}
-          type="button"
-          onClick={() => onSelect(item.id)}
-          className={cn(
-            'flex items-center gap-2.5 rounded-[10px] px-3 py-2.5 text-left text-[0.93em] tracking-[0.005em] transition-colors',
-            current === item.id
-              ? 'bg-secondary text-foreground'
-              : 'text-muted-foreground hover:bg-secondary/60 hover:text-foreground',
-          )}
+      {SECTIONS.filter((item) => !HIDDEN_SECTIONS.includes(item.id)).map(
+        (item) => (
+          <button
+            key={item.id}
+            type="button"
+            onClick={() => onSelect(item.id)}
+            className={cn(
+              "flex items-center gap-2.5 rounded-[10px] px-3 py-2.5 text-left text-[0.93em] tracking-[0.005em] transition-colors",
+              current === item.id
+                ? "bg-secondary text-foreground"
+                : "text-muted-foreground hover:bg-secondary/60 hover:text-foreground",
+            )}
+          >
+            <Icon
+              name={item.icon}
+              size={15}
+              className="opacity-85"
+              fallback="Circle"
+            />
+            {item.label}
+          </button>
+        ),
+      )}
+      {SHOW_SHOWCASE_LINK && (
+        <a
+          href="/showcase"
+          className="flex items-center gap-2.5 rounded-[10px] px-3 py-2.5 text-left text-[0.93em] tracking-[0.005em] text-muted-foreground transition-colors hover:bg-secondary/60 hover:text-foreground"
         >
-          <Icon name={item.icon} size={15} className="opacity-85" fallback="Circle" />
-          {item.label}
-        </button>
-      ))}
-      <a
-        href="/showcase"
-        className="flex items-center gap-2.5 rounded-[10px] px-3 py-2.5 text-left text-[0.93em] tracking-[0.005em] text-muted-foreground transition-colors hover:bg-secondary/60 hover:text-foreground"
-      >
-        <Icon name="Flame" size={15} className="opacity-85" fallback="Circle" />
-        Лучшие треки
-      </a>
+          <Icon
+            name="Flame"
+            size={15}
+            className="opacity-85"
+            fallback="Circle"
+          />
+          Лучшие треки
+        </a>
+      )}
     </nav>
-
-    <p className="mb-2 mt-7 px-3 text-[0.72em] uppercase tracking-[0.14em] text-muted-foreground">
-      Стили
-    </p>
-    <div className="scroll-slim -mr-1 flex max-h-[220px] flex-col gap-0.5 overflow-y-auto pr-1">
-      {STYLES.map((style) => (
-        <button
-          key={style}
-          type="button"
-          onClick={() => onStyle(style)}
-          className={cn(
-            'rounded-[10px] px-3 py-2.5 text-left text-[0.93em] transition-colors',
-            activeStyle === style
-              ? 'bg-secondary text-foreground'
-              : 'text-muted-foreground hover:bg-secondary/60 hover:text-foreground',
-          )}
-        >
-          {style}
-        </button>
-      ))}
-    </div>
 
     <div className="mt-auto pt-6">
       <button
@@ -134,7 +129,10 @@ const StudioSidebar = ({
       >
         <span
           className="h-7 w-7 flex-none rounded-full"
-          style={{ background: 'linear-gradient(150deg, hsl(var(--accent)), hsl(var(--wave)))' }}
+          style={{
+            background:
+              "linear-gradient(150deg, hsl(var(--accent)), hsl(var(--wave)))",
+          }}
         />
         <span className="min-w-0">
           <span className="block truncate text-[0.9em] leading-tight text-foreground">
@@ -142,9 +140,9 @@ const StudioSidebar = ({
           </span>
           <span className="block text-[0.78em] leading-tight text-muted-foreground">
             {guest
-              ? 'История треков в аккаунте'
+              ? "История треков в аккаунте"
               : credits > 9999
-                ? 'Администратор · без ограничений'
+                ? "Администратор · без ограничений"
                 : `${credits} генераций в месяц`}
           </span>
         </span>
