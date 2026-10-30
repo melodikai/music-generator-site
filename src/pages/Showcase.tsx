@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link } from "@/lib/router-compat";
 import Icon from '@/components/ui/icon';
 import SiteFooter from '@/components/studio/SiteFooter';
-import { fetchShowcase, likeTrack, type ShowcaseTrack } from '@/lib/api';
+import { likeTrack, type ShowcaseTrack } from '@/lib/api';
 import { cn } from '@/lib/utils';
 
 const COVERS = [
@@ -15,18 +15,14 @@ const COVERS = [
 const format = (sec: number) =>
   `${Math.floor((sec || 0) / 60)}:${String((sec || 0) % 60).padStart(2, '0')}`;
 
-const Showcase = () => {
-  const [tracks, setTracks] = useState<ShowcaseTrack[]>([]);
-  const [loading, setLoading] = useState(true);
+const Showcase = ({ initialTracks = [] }: { initialTracks?: ShowcaseTrack[] }) => {
+  const [tracks, setTracks] = useState<ShowcaseTrack[]>(initialTracks);
+  const loading = false;
   const [playing, setPlaying] = useState<string | null>(null);
   const [liked, setLiked] = useState<string[]>([]);
   const audioRef = useRef<HTMLAudioElement | null>(null);
 
   useEffect(() => {
-    fetchShowcase()
-      .then(setTracks)
-      .catch(() => undefined)
-      .finally(() => setLoading(false));
     return () => {
       audioRef.current?.pause();
     };

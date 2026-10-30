@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { useNavigate, useSearchParams } from 'react-router-dom';
+import { useNavigate, useSearchParams } from "@/lib/router-compat";
 import Icon from '@/components/ui/icon';
 import { resetPassword } from '@/lib/api';
 
